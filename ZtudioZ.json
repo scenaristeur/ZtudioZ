@@ -1,0 +1,760 @@
+{
+  "name": "ZtudioZ",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "<b>ZtudioZ — production d'une scène (MVP)</b><br><br>1. Activer le workflow, puis ouvrir l'URL du formulaire (nœud « Form Lancement »).<br>2. Renseigner <code>slug</code> et <code>numéro de scène</code>.<br>3. Chaque étape s'arrête sur une approbation : Continuer / Arrêter + remarque.<br><br><b>Prérequis :</b> le champ <b>command</b> des nœuds « Step * » doit être en <b>Expression</b> (pas Fixed). Credential SSH n8n→hôte + API preview :8000 (voir N8N.md).",
+        "height": 280,
+        "width": 420
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -460
+      ],
+      "id": "f337d0b9-2cf4-4655-80a1-e24cf576c206",
+      "name": "Consignes"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        0
+      ],
+      "id": "7cb7312d-55d7-43d2-be5d-1e72ec57a6b2",
+      "name": "Trigger Dev"
+    },
+    {
+      "parameters": {
+        "formTitle": "ZtudioZ — Lancement de production",
+        "formDescription": "Lance la production d'une scène : parse → fiches → sheets → storyboard → visualize → keyframes/produce → audio, avec approbation humaine entre chaque étape.",
+        "formFields": [
+          {
+            "fieldLabel": "Slug du projet",
+            "fieldType": "string",
+            "required": true,
+            "placeholder": "ex: test_proj"
+          },
+          {
+            "fieldLabel": "Numéro de scène",
+            "fieldType": "number",
+            "required": true,
+            "defaultValue": 1
+          }
+        ],
+        "options": {
+          "respondMode": "respondInWebhook"
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        280
+      ],
+      "id": "bf70debe-fc6f-4b45-b1f2-673997aa1a2a",
+      "name": "Form Lancement"
+    },
+    {
+      "parameters": {
+        "jsCode": "const DEFAULT_SLUG = 'test_proj';\nconst j = $json && typeof $json === 'object' ? $json : {};\nconst src = (j.data && typeof j.data === 'object') ? j.data : j;\nlet slug = String(src.slug || src.projectSlug || '').trim();\nif (!slug) slug = DEFAULT_SLUG;\nconst scene = Math.max(1, parseInt(src.scene, 10) || 1);\nconst scene_key = 'scene_' + String(scene).padStart(2, '0');\nconsole.log('Params:', slug, scene);\nreturn [{ json: { slug, scene, scene_key } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        140
+      ],
+      "id": "777b15ed-b3a1-44fc-ab31-7b4250da9b6a",
+      "name": "Preparer Parametres"
+    },
+    {
+      "parameters": {
+        "command": "=/home/smag/dev/ZtudioZ/.venv/bin/python -c \"from pipeline.ztudioz_toolkit import ZtudioZToolkit; t=ZtudioZToolkit(); print(t.parse_script('{{ $('Preparer Parametres').item.json.slug }}'))\"",
+        "authentication": "privateKey",
+        "cwd": "/home/smag/dev/ZtudioZ"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        760,
+        0
+      ],
+      "id": "21b71df3-82b4-4151-926c-93bc4a165307",
+      "name": "Step Parse",
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "qSYM5kqMwYGcLdqe",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=/home/smag/dev/ZtudioZ/.venv/bin/python -c \"from pipeline.ztudioz_toolkit import ZtudioZToolkit; t=ZtudioZToolkit(); print(t.generate_fiches('{{ $('Preparer Parametres').item.json.slug }}'))\"",
+        "authentication": "privateKey",
+        "cwd": "/home/smag/dev/ZtudioZ"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ],
+      "id": "066aa341-f237-4542-8b83-7f595499ee73",
+      "name": "Step Fiches",
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "qSYM5kqMwYGcLdqe",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=/home/smag/dev/ZtudioZ/.venv/bin/python -c \"from pipeline.ztudioz_toolkit import ZtudioZToolkit; t=ZtudioZToolkit(); print(t.generate_sheets('{{ $('Preparer Parametres').item.json.slug }}'))\"",
+        "authentication": "privateKey",
+        "cwd": "/home/smag/dev/ZtudioZ"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        760,
+        440
+      ],
+      "id": "6ef2850c-c541-45fe-99dd-305612ad8fb4",
+      "name": "Step Sheets",
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "qSYM5kqMwYGcLdqe",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=/home/smag/dev/ZtudioZ/.venv/bin/python -c \"from pipeline.ztudioz_toolkit import ZtudioZToolkit; t=ZtudioZToolkit(); print(t.storyboard_text('{{ $('Preparer Parametres').item.json.slug }}'))\"",
+        "authentication": "privateKey",
+        "cwd": "/home/smag/dev/ZtudioZ"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        760,
+        660
+      ],
+      "id": "043aa95b-ea8d-432b-bd3e-93a652221dc3",
+      "name": "Step Storyboard",
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "qSYM5kqMwYGcLdqe",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=/home/smag/dev/ZtudioZ/.venv/bin/python -c \"from pipeline.ztudioz_toolkit import ZtudioZToolkit; t=ZtudioZToolkit(); print(t.storyboard_visualize('{{ $('Preparer Parametres').item.json.slug }}', {{ $('Preparer Parametres').item.json.scene }}))\"",
+        "authentication": "privateKey",
+        "cwd": "/home/smag/dev/ZtudioZ"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        0
+      ],
+      "id": "281ecb26-8776-43a9-878c-933c4c3013f3",
+      "name": "Step Visualize",
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "qSYM5kqMwYGcLdqe",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=/home/smag/dev/ZtudioZ/.venv/bin/python -c \"from pipeline.orchestrator import Orchestrator; o=Orchestrator('{{ $('Preparer Parametres').item.json.slug }}'); print(o.produce_keyframes([{'number': {{ $('Preparer Parametres').item.json.scene }}}]))\"",
+        "authentication": "privateKey",
+        "cwd": "/home/smag/dev/ZtudioZ"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        220
+      ],
+      "id": "157f7817-0005-4a56-b8db-a4645ce1bbc9",
+      "name": "Step Keyframes",
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "qSYM5kqMwYGcLdqe",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=/home/smag/dev/ZtudioZ/.venv/bin/python -c \"from pipeline.orchestrator import Orchestrator; o=Orchestrator('{{ $('Preparer Parametres').item.json.slug }}'); print(o.produce_shots([{'number': {{ $('Preparer Parametres').item.json.scene }}}]))\"",
+        "authentication": "privateKey",
+        "cwd": "/home/smag/dev/ZtudioZ"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        440
+      ],
+      "id": "ecdd9bfc-f613-42f2-9b95-4c1ce629cdb5",
+      "name": "Step Produce",
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "qSYM5kqMwYGcLdqe",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=/home/smag/dev/ZtudioZ/.venv/bin/python -c \"from pipeline.orchestrator import Orchestrator; o=Orchestrator('{{ $('Preparer Parametres').item.json.slug }}'); print(o.generate_audio([{'number': {{ $('Preparer Parametres').item.json.scene }}}]))\"",
+        "authentication": "privateKey",
+        "cwd": "/home/smag/dev/ZtudioZ"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        660
+      ],
+      "id": "5edcbf71-74a3-412f-9653-dd03baf29398",
+      "name": "Step Audio",
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "qSYM5kqMwYGcLdqe",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "formTitle": "Approbation — Storyboard",
+        "formDescription": "=Storyboard textuel généré (découpage en plans).<br>Le découpage est-il conforme ?",
+        "formFields": [
+          {
+            "fieldName": "decision",
+            "fieldLabel": "Décision",
+            "fieldType": "dropdown",
+            "fieldOptions": {
+              "values": [
+                {
+                  "option": "Continuer",
+                  "value": "continue"
+                },
+                {
+                  "option": "Arrêter (skip)",
+                  "value": "skip"
+                }
+              ]
+            },
+            "requiredField": true,
+            "defaultValue": "continue"
+          },
+          {
+            "fieldName": "feedback",
+            "fieldLabel": "Remarque / correction (optionnel)",
+            "fieldType": "text",
+            "requiredField": false
+          }
+        ],
+        "options": {
+          "respondMode": "respondInWebhook"
+        }
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.4,
+      "position": [
+        1020,
+        660
+      ],
+      "id": "c1b5ec41-067e-4524-861b-d5efa82a8e8a",
+      "name": "Approbation Storyboard"
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $json && typeof $json === 'object' ? $json : {};\nconst src = (j.data && typeof j.data === 'object') ? j.data : j;\nconst decision = src.decision || 'continue';\nconst feedback = src.feedback || '';\nconsole.log('Décision:', decision, '| Feedback:', feedback);\nif (decision === 'skip' || decision === 'quit') {\n  throw new Error(\"Workflow arrêté par l'utilisateur (\" + decision + \")\");\n}\nreturn [{ json: { ...j, decision, feedback } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        660
+      ],
+      "id": "e699be85-298a-459b-a7dd-07247b9428d9",
+      "name": "Decision Storyboard"
+    },
+    {
+      "parameters": {
+        "formTitle": "Approbation — Dessins storyboard",
+        "formDescription": "=Planche et shots générés pour la scène {{ $('Preparer Parametres').item.json.scene }}.<br><img src=\"http://localhost:8000/api/assets/{{ $('Preparer Parametres').item.json.slug }}/file/preprod/storyboard/{{ $('Preparer Parametres').item.json.scene_key }}/storyboard_board.png\" style=\"max-width:100%\"><br>Détail des plans : http://localhost:8000/api/assets/{{ $('Preparer Parametres').item.json.slug }}/storyboard/{{ $('Preparer Parametres').item.json.scene }}",
+        "formFields": [
+          {
+            "fieldName": "decision",
+            "fieldLabel": "Décision",
+            "fieldType": "dropdown",
+            "fieldOptions": {
+              "values": [
+                {
+                  "option": "Continuer",
+                  "value": "continue"
+                },
+                {
+                  "option": "Arrêter (skip)",
+                  "value": "skip"
+                }
+              ]
+            },
+            "requiredField": true,
+            "defaultValue": "continue"
+          },
+          {
+            "fieldName": "feedback",
+            "fieldLabel": "Remarque / correction (optionnel)",
+            "fieldType": "text",
+            "requiredField": false
+          }
+        ],
+        "options": {
+          "respondMode": "respondInWebhook"
+        }
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.4,
+      "position": [
+        1740,
+        0
+      ],
+      "id": "bf869e61-882c-4fa5-87a7-748c888c84a8",
+      "name": "Approbation Shots"
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $json && typeof $json === 'object' ? $json : {};\nconst src = (j.data && typeof j.data === 'object') ? j.data : j;\nconst decision = src.decision || 'continue';\nconst feedback = src.feedback || '';\nconsole.log('Décision:', decision, '| Feedback:', feedback);\nif (decision === 'skip' || decision === 'quit') {\n  throw new Error(\"Workflow arrêté par l'utilisateur (\" + decision + \")\");\n}\nreturn [{ json: { ...j, decision, feedback } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        0
+      ],
+      "id": "7bf2cdca-1675-4928-8678-70309b07188c",
+      "name": "Decision Shots"
+    },
+    {
+      "parameters": {
+        "formTitle": "Approbation — Vidéos",
+        "formDescription": "=Vidéos générées pour la scène {{ $('Preparer Parametres').item.json.scene }}.<br>Liste : http://localhost:8000/api/assets/{{ $('Preparer Parametres').item.json.slug }}/videos/{{ $('Preparer Parametres').item.json.scene }}",
+        "formFields": [
+          {
+            "fieldName": "decision",
+            "fieldLabel": "Décision",
+            "fieldType": "dropdown",
+            "fieldOptions": {
+              "values": [
+                {
+                  "option": "Continuer",
+                  "value": "continue"
+                },
+                {
+                  "option": "Arrêter (skip)",
+                  "value": "skip"
+                }
+              ]
+            },
+            "requiredField": true,
+            "defaultValue": "continue"
+          },
+          {
+            "fieldName": "feedback",
+            "fieldLabel": "Remarque / correction (optionnel)",
+            "fieldType": "text",
+            "requiredField": false
+          }
+        ],
+        "options": {
+          "respondMode": "respondInWebhook"
+        }
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.4,
+      "position": [
+        1740,
+        220
+      ],
+      "id": "a65e6747-ef4c-40d4-83c3-6263668792be",
+      "name": "Approbation Videos"
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $json && typeof $json === 'object' ? $json : {};\nconst src = (j.data && typeof j.data === 'object') ? j.data : j;\nconst decision = src.decision || 'continue';\nconst feedback = src.feedback || '';\nconsole.log('Décision:', decision, '| Feedback:', feedback);\nif (decision === 'skip' || decision === 'quit') {\n  throw new Error(\"Workflow arrêté par l'utilisateur (\" + decision + \")\");\n}\nreturn [{ json: { ...j, decision, feedback } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        220
+      ],
+      "id": "aa95f9ce-673a-4da0-b969-4bf24e6b0a94",
+      "name": "Decision Videos"
+    },
+    {
+      "parameters": {
+        "formTitle": "Approbation — Vidéos (produce)",
+        "formDescription": "=Vidéos i2v (produce) pour la scène {{ $('Preparer Parametres').item.json.scene }}.<br>Liste : http://localhost:8000/api/assets/{{ $('Preparer Parametres').item.json.slug }}/videos/{{ $('Preparer Parametres').item.json.scene }}",
+        "formFields": [
+          {
+            "fieldName": "decision",
+            "fieldLabel": "Décision",
+            "fieldType": "dropdown",
+            "fieldOptions": {
+              "values": [
+                {
+                  "option": "Continuer",
+                  "value": "continue"
+                },
+                {
+                  "option": "Arrêter (skip)",
+                  "value": "skip"
+                }
+              ]
+            },
+            "requiredField": true,
+            "defaultValue": "continue"
+          },
+          {
+            "fieldName": "feedback",
+            "fieldLabel": "Remarque / correction (optionnel)",
+            "fieldType": "text",
+            "requiredField": false
+          }
+        ],
+        "options": {
+          "respondMode": "respondInWebhook"
+        }
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.4,
+      "position": [
+        1740,
+        440
+      ],
+      "id": "02fe745d-5413-4c5e-84c6-59b48e81fd5f",
+      "name": "Approbation Videos Final"
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $json && typeof $json === 'object' ? $json : {};\nconst src = (j.data && typeof j.data === 'object') ? j.data : j;\nconst decision = src.decision || 'continue';\nconst feedback = src.feedback || '';\nconsole.log('Décision:', decision, '| Feedback:', feedback);\nif (decision === 'skip' || decision === 'quit') {\n  throw new Error(\"Workflow arrêté par l'utilisateur (\" + decision + \")\");\n}\nreturn [{ json: { ...j, decision, feedback } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        440
+      ],
+      "id": "4b9d3c33-e368-435a-95ab-5f0c41d2b947",
+      "name": "Decision Videos Final"
+    },
+    {
+      "parameters": {
+        "formTitle": "Approbation — Audio",
+        "formDescription": "=Audio généré pour la scène {{ $('Preparer Parametres').item.json.scene }}.<br>Liste : http://localhost:8000/api/assets/{{ $('Preparer Parametres').item.json.slug }}/audio/{{ $('Preparer Parametres').item.json.scene }}",
+        "formFields": [
+          {
+            "fieldName": "decision",
+            "fieldLabel": "Décision",
+            "fieldType": "dropdown",
+            "fieldOptions": {
+              "values": [
+                {
+                  "option": "Continuer",
+                  "value": "continue"
+                },
+                {
+                  "option": "Arrêter (skip)",
+                  "value": "skip"
+                }
+              ]
+            },
+            "requiredField": true,
+            "defaultValue": "continue"
+          },
+          {
+            "fieldName": "feedback",
+            "fieldLabel": "Remarque / correction (optionnel)",
+            "fieldType": "text",
+            "requiredField": false
+          }
+        ],
+        "options": {
+          "respondMode": "respondInWebhook"
+        }
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.4,
+      "position": [
+        1740,
+        660
+      ],
+      "id": "6b444dfc-f69d-407f-b07d-ee7c4aa74291",
+      "name": "Approbation Audio"
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $json && typeof $json === 'object' ? $json : {};\nconst src = (j.data && typeof j.data === 'object') ? j.data : j;\nconst decision = src.decision || 'continue';\nconst feedback = src.feedback || '';\nconsole.log('Décision:', decision, '| Feedback:', feedback);\nif (decision === 'skip' || decision === 'quit') {\n  throw new Error(\"Workflow arrêté par l'utilisateur (\" + decision + \")\");\n}\nreturn [{ json: { ...j, decision, feedback } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        660
+      ],
+      "id": "0241435b-7345-4ff3-afa4-3baa4169023a",
+      "name": "Decision Audio"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Trigger Dev": {
+      "main": [
+        [
+          {
+            "node": "Preparer Parametres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Form Lancement": {
+      "main": [
+        [
+          {
+            "node": "Preparer Parametres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparer Parametres": {
+      "main": [
+        [
+          {
+            "node": "Step Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Parse": {
+      "main": [
+        [
+          {
+            "node": "Step Fiches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Fiches": {
+      "main": [
+        [
+          {
+            "node": "Step Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Sheets": {
+      "main": [
+        [
+          {
+            "node": "Step Storyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Storyboard": {
+      "main": [
+        [
+          {
+            "node": "Approbation Storyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approbation Storyboard": {
+      "main": [
+        [
+          {
+            "node": "Decision Storyboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Storyboard": {
+      "main": [
+        [
+          {
+            "node": "Step Visualize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Visualize": {
+      "main": [
+        [
+          {
+            "node": "Approbation Shots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approbation Shots": {
+      "main": [
+        [
+          {
+            "node": "Decision Shots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Shots": {
+      "main": [
+        [
+          {
+            "node": "Step Keyframes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Keyframes": {
+      "main": [
+        [
+          {
+            "node": "Approbation Videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approbation Videos": {
+      "main": [
+        [
+          {
+            "node": "Decision Videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Videos": {
+      "main": [
+        [
+          {
+            "node": "Step Produce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Produce": {
+      "main": [
+        [
+          {
+            "node": "Approbation Videos Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approbation Videos Final": {
+      "main": [
+        [
+          {
+            "node": "Decision Videos Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Videos Final": {
+      "main": [
+        [
+          {
+            "node": "Step Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step Audio": {
+      "main": [
+        [
+          {
+            "node": "Approbation Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approbation Audio": {
+      "main": [
+        [
+          {
+            "node": "Decision Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "nodeGroups": [],
+  "id": "c38bdb2b-76d8-4c7e-8ab6-e381314114f5",
+  "tags": []
+}

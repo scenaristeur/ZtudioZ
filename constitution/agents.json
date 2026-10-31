@@ -1,0 +1,100 @@
+{
+  "version": "1.0",
+  "meta": {
+    "date_ratification": "2026-07-19",
+    "super_decideur": "Humain",
+    "principe_fondateur": "Chaque étape du pipeline produit un artefact versionnable et rollbackable."
+  },
+  "phases": [
+    {
+      "id": "sources",
+      "name": "Sources",
+      "description": "Upload et analyse des matières premières",
+      "roles": ["source_reader"]
+    },
+    {
+      "id": "scenario",
+      "name": "Scénario",
+      "description": "Création collaborative du scénario",
+      "roles": ["scenariste"]
+    },
+    {
+      "id": "preproduction",
+      "name": "Pré-production",
+      "description": "Fiches, planches, storyboard, audio",
+      "roles": ["fiche_designer", "sheet_generator", "storyboarder", "audio_designer"]
+    },
+    {
+      "id": "production",
+      "name": "Production",
+      "description": "Génération des vidéos",
+      "roles": ["video_producer"]
+    },
+    {
+      "id": "postproduction",
+      "name": "Post-production",
+      "description": "Montage et assemblage final",
+      "roles": ["montage_editor"]
+    }
+  ],
+  "roles": {
+    "source_reader": {
+      "raison_d_etre": "Lire et résumer les matières premières du projet",
+      "domaines": ["sources", "inspirations", "contraintes"],
+      "tools": ["ztudioz.get_project_files", "ztudioz.analyze_images"],
+      "prompt_system": "Tu lis les sources d'un projet et produis un résumé structuré."
+    },
+    "scenariste": {
+      "raison_d_etre": "Aider l'utilisateur à créer un scénario structuré",
+      "domaines": ["scenario", "dialogues", "structure"],
+      "tools": ["ztudioz.llm_chat", "ztudioz.parse_script"],
+      "prompt_system": "Tu es un assistant scénariste. Tu proposes mais ne décides pas."
+    },
+    "fiche_designer": {
+      "raison_d_etre": "Générer les fiches personnages/lieux/objets",
+      "domaines": ["bible", "fiches", "attributs"],
+      "tools": ["ztudioz.generate_fiches"],
+      "prompt_system": "Tu crées des fiches visuelles détaillées pour chaque entité."
+    },
+    "sheet_generator": {
+      "raison_d_etre": "Générer les planches de référence visuelle",
+      "domaines": ["sheets", "character_design", "location_design"],
+      "tools": ["ztudioz.generate_sheets"],
+      "prompt_system": "Tu génères des images de référence cohérentes avec les fiches."
+    },
+    "storyboarder": {
+      "raison_d_etre": "Créer le storyboard textuel et visuel",
+      "domaines": ["storyboard", "plans", "caméra"],
+      "tools": ["ztudioz.storyboard_text", "ztudioz.storyboard_visualize"],
+      "prompt_system": "Tu découpes chaque scène en plans avec intention dramatique."
+    },
+    "audio_designer": {
+      "raison_d_etre": "Générer les dialogues TTS et l'ambiance sonore",
+      "domaines": ["audio", "dialogues", "voix"],
+      "tools": ["ztudioz.generate_audio"],
+      "prompt_system": "Tu génères les voix des personnages et l'ambiance sonore."
+    },
+    "video_producer": {
+      "raison_d_etre": "Générer les clips vidéo à partir du storyboard",
+      "domaines": ["video", "animation", "rendering"],
+      "tools": ["ztudioz.produce_video"],
+      "prompt_system": "Tu produis des clips vidéo cohérents avec le storyboard."
+    },
+    "montage_editor": {
+      "raison_d_etre": "Assembler les clips en montages de scènes et film final",
+      "domaines": ["montage", "assembly", "export"],
+      "tools": ["ztudioz.run_pipeline"],
+      "prompt_system": "Tu montes les scènes en respectant le rythme et l'intention."
+    }
+  },
+  "dependencies": {
+    "source_reader": [],
+    "scenariste": ["source_reader"],
+    "fiche_designer": ["scenariste"],
+    "sheet_generator": ["fiche_designer"],
+    "storyboarder": ["scenariste"],
+    "audio_designer": ["storyboarder"],
+    "video_producer": ["storyboarder", "sheet_generator"],
+    "montage_editor": ["video_producer", "audio_designer"]
+  }
+}

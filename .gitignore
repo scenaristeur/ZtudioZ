@@ -1,0 +1,10 @@
+.env
+.venv
+opencode*
+__pycache__
+projets*
+node_modules
+web/dist
+.playwright/**
+.playwright-cli/**
+agnes_working_dir

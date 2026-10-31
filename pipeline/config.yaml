@@ -1,0 +1,266 @@
+project:
+  name: 50emeRose
+  root: ../projets/50emeRose
+services:
+  llm:
+    active: albert
+    providers:
+      albert:
+        type: tool_calling_model
+        model: openai/gpt-oss-120b
+        api_key: ${OPENAI_API_KEY}
+        base_url: ${OPENAI_BASE_URL}
+        temperature: 0.2
+        max_tokens: 4000
+      agnes:
+        type: tool_calling_model
+        model: agnes-2.5-flash
+        api_key: ${AGNES_API_KEY}
+        base_url: https://apihub.agnes-ai.com/v1
+        temperature: 0.2
+        max_tokens: 4000
+      pollinations:
+        type: chat_completion
+        model: gemini-fast
+  vision:
+    active: albert
+    providers:
+      albert:
+        type: tool_calling_model
+        model: gemma-4-31b-it
+        api_key: ${OPENAI_API_KEY}
+        base_url: ${OPENAI_BASE_URL}
+        temperature: 0.1
+        max_tokens: 2000
+  image:
+    active: pollinations
+    providers:
+      agnes:
+        type: agnes
+        base_url: http://localhost:8765
+        apihub_url: https://apihub.agnes-ai.com
+        api_key: ${AGNES_API_KEY}
+        compose_model: agnes-image-2.1-flash
+        size: 1152x768
+        dev: true
+        dev_size: 1152x768
+        valid_sizes:
+        - 1024x1024
+        - 768x1152
+        - 1152x768
+        - 768x1344
+        - 1344x768
+        - 1792x1024
+        - 1024x1792
+      pollinations:
+        type: api
+        model: gptimage
+        width: 1344
+        height: 768
+        seed: null
+        quality: medium
+        strict_refs: false
+        no_model_fallback: true
+        multi_ref_model: gptimage
+        parallel: 1
+      focus:
+        type: gradio
+        url: ${FOOCUS_URL}
+  video:
+    active: pollinations
+    providers:
+      agnes:
+        type: agnes
+        base_url: http://localhost:8765
+        apihub_url: https://apihub.agnes-ai.com
+        api_key: ${AGNES_API_KEY}
+        video_model: agnes-video-v2.0
+        width: 1152
+        height: 768
+        duration: 5
+        seed: null
+        dev: true
+        dev_width: 480
+        dev_height: 270
+        valid_durations:
+        - 5
+        - 10
+        - 15
+        - 18
+        - 20
+        apihub_retries: 3
+        apihub_retry_base_wait: 10
+        apihub_retry_max_wait: 60
+      pollinations:
+        type: api
+        model: wan-fast
+        api_key: ${POLLINATION_API_KEY}
+        width: 1344
+        height: 768
+        duration: 5
+        seed: null
+  audio:
+    active: pollinations
+    providers:
+      pollinations:
+        type: tts
+        voice: onyx
+        model: default
+bible:
+  active: yaml
+  providers:
+    yaml:
+      path: bible/
+    grist:
+      server: ${GRIST_SERVER}
+      doc_id: ${GRIST_DOC_ID}
+      api_key: ${GRIST_API_KEY}
+clip:
+  # Production de clips musicaux depuis un fichier audio + un brief visuel.
+  # Organise par variantes (ex: v1 abstrait, v2 humain) partageant la même analyse audio.
+  active: true
+  transcription_model: openai/whisper-large-v3
+  transcription_model_alt: mistralai/Voxtral-Mini-3B-2507
+  audio:
+    active: albert
+    providers:
+      albert:
+        type: openai
+        api_key: ${OPENAI_API_KEY}
+        base_url: ${OPENAI_BASE_URL}
+      agnes:
+        type: openai
+        api_key: ${AGNES_API_KEY}
+        base_url: https://apihub.agnes-ai.com/v1
+  image_size: "1344x768"
+  dev: true          # résolutions réduites (désactiver en prod)
+  sync_on_real_timestamps: true
+  variants: []   # les variantes sont définies dans preprod/clip/config.yaml de chaque projet
+production:
+  default_seed: 42
+  consistency_check: true
+  # Portail de validation entre deux étapes.
+  #
+  #   interactive : prompt (c)ontinuer (r)etry (s)kip (p)ause (q)uit — EXIGE un terminal.
+  #   manual      : aucun prompt ; l'artefact est écrit et le run continue. Pour un
+  #                 pilotage par agent, où l'humain valide entre deux appels d'étapes
+  #                 (typiquement avec ztudioz_analyze_images).
+  #   off         : aucun portail du tout (batch non supervisé).
+  #
+  # `interactive` refuse de tourner sans TTY : input() lèverait EOFError sur un stdin
+  # fermé (appel MCP / agent) ou bloquerait indéfiniment sur un pipe inerte. Mieux vaut
+  # un échec explicite et actionnable qu'une validation fantôme.
+  validation_mode: interactive
+  # Ancien booléen, honoré seulement si `validation_mode` est absent.
+  human_validation: true
+  # Refuser un run dont le coût estimé dépasse ce plafond (0 = illimité).
+  # Voir ztudioz-troubleshooting / le rapport de pré-vol.
+  budget_per_scene: 0
+  retry_on_failure: true
+  max_retries: 3
+  parallel_shots: false
+  checkpoint: true
+  storyboard_delay: 7     # secondes entre les appels LLM par plan (évite le rate limit 429)
+  storyboard:
+    # Garde-fou visuel déterministe appliqué au storyboard APRÈS le LLM.
+    # Le LLM écrit les plans dans le vocabulaire du script, qui dérive naturellement
+    # vers un registre que la bible interdit. On n'y fait pas confiance : on nettoie
+    # les termes interdits, on ré-ancre le prompt sur la bible, puis on ajoute une
+    # queue négative ferme.
+    #
+    # DÉSACTIVÉ par défaut : la liste ci-dessous présuppose un film contemporain et
+    # casserait un projet de science-fiction légitime. Pour l'activer sur un projet,
+    # créer `bible/storyboard_guard.yaml` avec `enabled: true` (les listes ci-dessous
+    # restent alors modifiables projet par projet).
+    enabled: false
+    # Termes interdits. Chaque entrée {terme: remplacement}; un remplacement vide
+    # supprime le terme. Appliqué sur description ET prompt_image.
+    # Une clé préfixée `re:` est un motif regex (utile pour couvrir les flexions
+    # françaises : holographique / holographiques).
+    banned_terms:
+      # -- registre français (flexions) --
+      "re:\\bholographiques?\\b": "projections plates"
+      "re:\\bfuturistes?\\b": "contemporains"
+      "re:\\b(?:écrans?|panneaux?)[\\w\\s]{0,12}?suspendus?\\b": "un unique grand écran plat mural"
+      "re:\\b(?:coutures?|bordures?|liserés?|passementerie)\\s+(?:argentées?|dorées?|métalliques?)\\b": ""
+      "re:\\bbracelets?\\b": ""
+      "re:\\bgantées?\\b": ""
+      "re:\\bOLED\\b": ""
+      "re:\\bLED\\b": ""
+      "re:\\bLED[- ](?:trim|strips?|accents?)\\b": ""
+      "re:\\b(?:silver|metallic|chrome)\\s+(?:stitching|trim|piping|seams?)\\b": ""
+      "re:\\bidea\\s+bubbles?\\b": ""
+      "holographic": "flat printed projection"
+      "holographic interface": "flat printed projection"
+      "holograms": "flat printed projections"
+      "hologram": "flat printed projection"
+      "holographic overlays": "flat printed graphics"
+      "neon": ""
+      "néon": ""
+      "neon-lit": "backlit"
+      "glowing": "matte"
+      "floating screens": "wall-mounted flat panels"
+      "floating panels": "wall-mounted flat panels"
+      "floating holographic": "flat printed"
+      "levitating": ""
+      "android": "person"
+      "android-like": ""
+      "cybernetic": ""
+      "cyberpunk": ""
+      "sci-fi": "contemporary"
+      "science fiction": "contemporary reality"
+      "futuristic": "contemporary"
+      "futuristic-style": "contemporary"
+      "dystopian": "contemporary"
+      "ultra-realistic render": "realistic photograph"
+      "8K resolution": ""
+      "8k resolution": ""
+      "4k": ""
+      "voice-over text overlay": ""
+      "coutures argentées": ""
+      "col légèrement illuminé": ""
+      "illuminated collar": ""
+      "silver stitching": ""
+      "led trim": ""
+      "glowing trim": ""
+      "bracelet minimaliste": ""
+      "minimalist bracelet": ""
+      "gantée": ""
+      "gloved": ""
+    # Queue ajoutée en fin de chaque prompt_image : dernier recours contre la dérive.
+    negative_suffix: >-
+      contemporary French reality, real people, real location, matte matte materials,
+      no neon, no holograms, no sci-fi, no futuristic elements, no glowing elements,
+      no floating objects, no cybernetic implants, no LED-trimmed clothing, no
+      illustration, no 3D render, realistic photograph
+    # Ré-ancre le prompt_image sur la bible (style-guide + tenue des personnages présents).
+    anchor_to_bible: true
+    # Réécriture LLM des `description` qui violent le registre. La substitution
+    # déterministe est réservée au `prompt_image` (espace de mots-clés) : muter de la
+    # prose par regex produit des phrases agrammaticales.
+    llm_repair: true
+  visualize:
+    # Phrase concaténée au prompt de chaque plan pour assurer la continuité avec le
+    # plan précédent (décor, accessoires, wardrobe, contenu des écrans).
+    # Vide = désactiver la continuité.
+    continuity_prompt: "CONTINUITY: identical set, identical lighting and identical characters as the previous shot; keep the exact same decor, props, wardrobe and screen content."
+    # Slugs d'objets bible à charger comme références sur tous les plans (optionnel).
+    objects: []
+  keyframes:
+    enabled: true
+    cadence: action            # action (beats LLM) | seconds
+    seconds_interval: 5        # si cadence=seconds
+    min_beats: 1
+    max_beats: 4               # plafond d'images intermédiaires par plan
+    regen_start: false         # régénérer le start multi-refs (sinon réutilise le shot)
+    multi_ref_model: gptimage  # gpt-image, UNIQUEMENT pour les beats multi-références (faible coût)
+    use_direct_for_multi: true # 3+ keyframes → apihub direct
+    validate_before_video: true  # validation humaine des prompts + keyframes avant la vidéo
+    max_validation_tries: 3    # nb max de boucles retry (r) par plan
+    verify_each_keyframe: true # vérification vision de CHAQUE keyframe avant de passer à la suivante
+    verify_max_tries: 3        # nb max de régénérations d'une keyframe non conforme
+    verify_model: ""           # modèle vision pour la vérification (vide = celui de config.vision)
+    shot_end: true             # image finale dédiée (état de fin du plan) ajoutée après les beats
+    strategy: "auto"           # routage déterministe des beats : multi_ref (gptimage) pour le 1er beat et tout nouveau élément, sinon evolution (agnes, transition image→image) ; "multi_ref" force tout
+    image_size: "1344x768"     # ratio unifié pour TOUTES les keyframes (multi_ref + evolutions, ~16:9) ; vide = config provider
+    dev: true                  # résolutions réduites (désactiver en prod)

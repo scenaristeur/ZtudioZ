@@ -1,0 +1,116 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #e0e0e0; }
+.app { display: flex; height: 100vh; }
+
+/* Sidebar */
+.sidebar { width: 220px; background: #111; border-right: 1px solid #222; padding: 1rem; display: flex; flex-direction: column; }
+.sidebar .logo { font-size: 1.4rem; font-weight: 700; color: #c9a0dc; margin-bottom: 0.25rem; }
+.sidebar .project-name { font-size: 0.75rem; color: #555; margin-bottom: 1.5rem; }
+.nav-steps { list-style: none; flex: 1; }
+.nav-steps li { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem; border-radius: 6px; cursor: pointer; color: #666; margin-bottom: 0.25rem; transition: all 0.15s; font-size: 0.85rem; }
+.nav-steps li:hover { background: #1a1a2e; color: #ccc; }
+.nav-steps li.active { background: #1a1a2e; color: #c9a0dc; font-weight: 600; }
+.nav-steps li.done { color: #22c55e; }
+.step-icon { width: 1.2rem; text-align: center; }
+
+/* Status */
+.status-bar { font-size: 0.75rem; color: #555; display: flex; align-items: center; gap: 0.4rem; padding-top: 1rem; border-top: 1px solid #222; }
+.dot { width: 8px; height: 8px; border-radius: 50%; }
+.dot.green { background: #22c55e; }
+.dot.red { background: #ef4444; }
+
+/* Content */
+.content { flex: 1; overflow-y: auto; padding: 2rem; }
+h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: #c9a0dc; }
+
+/* Cards */
+.card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+.empty { color: #555; font-style: italic; }
+
+/* Stats */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+.stat { text-align: center; }
+.stat-value { display: block; font-size: 2rem; font-weight: 700; color: #c9a0dc; }
+.stat-label { font-size: 0.8rem; color: #666; }
+
+/* Scene grid */
+.scene-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.5rem; }
+.scene-card { background: #1a1a2e; border-radius: 6px; padding: 0.75rem; text-align: center; border: 1px solid #222; }
+.scene-card.done { border-color: #22c55e33; }
+.scene-num { font-size: 1.5rem; font-weight: 700; color: #c9a0dc; }
+.scene-status { margin-top: 0.25rem; }
+
+/* Toolbar */
+.toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Forms */
+.select, .input { background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; padding: 0.4rem 0.6rem; border-radius: 4px; font-size: 0.85rem; }
+.select { cursor: pointer; }
+textarea.input { width: 100%; resize: vertical; font-family: inherit; }
+.field { margin-bottom: 0.75rem; }
+.field label { display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.25rem; }
+.field-row { display: flex; gap: 1rem; }
+.field-row .field { flex: 1; }
+
+/* Buttons */
+.btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; background: #1a1a2e; color: #c9a0dc; transition: all 0.15s; text-decoration: none; display: inline-block; }
+.btn:hover { background: #2a2a4e; }
+.btn.primary { background: #c9a0dc; color: #0a0a0a; }
+.btn.primary:hover { background: #b88cd0; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
+
+/* Tags */
+.tag { display: inline-block; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.7rem; background: #1a1a2e; color: #c9a0dc; margin: 0.1rem; }
+
+/* Shot editor */
+.shots-list { display: flex; flex-direction: column; gap: 1rem; }
+.shot-editor { display: flex; gap: 1.5rem; }
+.shot-editor-left { flex: 0 0 280px; }
+.shot-editor-right { flex: 1; }
+.shot-preview { width: 100%; border-radius: 6px; }
+.shot-placeholder { width: 100%; aspect-ratio: 16/9; background: #1a1a2e; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #555; }
+.shot-meta { margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.shot-desc { color: #888; font-size: 0.8rem; margin-top: 0.5rem; }
+.shot-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+.shot-status { margin-top: 0.5rem; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; }
+.shot-status.success { background: #22c55e22; color: #22c55e; }
+.shot-status.error { background: #ef444422; color: #ef4444; }
+
+/* Storyboard */
+.board-img { width: 100%; border-radius: 6px; }
+.shots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; }
+.shot-card { background: #111; border: 1px solid #222; border-radius: 8px; overflow: hidden; }
+.shot-img { width: 100%; }
+.shot-info { padding: 0.75rem; }
+
+/* Refs */
+.shot-refs { margin-top: 0.5rem; }
+.shot-refs label { font-size: 0.7rem; color: #888; display: block; margin-bottom: 0.3rem; }
+.refs-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.ref-thumb { text-align: center; }
+.ref-thumb img { width: 50px; height: 50px; object-fit: cover; border-radius: 4px; border: 1px solid #333; }
+.ref-label { font-size: 0.6rem; color: #666; display: block; max-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Audio */
+.audio-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.audio-card { display: flex; align-items: center; gap: 1rem; }
+.audio-info { flex: 1; }
+.audio-player { flex: 2; height: 40px; }
+
+/* Montage */
+.montage-video { width: 100%; border-radius: 6px; }
+.montage-info { margin-top: 0.5rem; }
+.montage-row { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid #1a1a2e; }
+
+/* Source */
+.source-card { display: flex; flex-direction: column; gap: 0.5rem; }
+.source-header { display: flex; align-items: center; gap: 0.5rem; }
+.source-icon { font-size: 1.2rem; }
+.source-contents { padding-left: 1.5rem; }
+.source-item { display: flex; gap: 0.5rem; align-items: center; padding: 0.2rem 0; font-size: 0.85rem; color: #aaa; }
+
+/* Events */
+.event-row { display: flex; gap: 0.5rem; align-items: center; padding: 0.3rem 0; font-size: 0.85rem; }
+.event-row .error { color: #ef4444; }
