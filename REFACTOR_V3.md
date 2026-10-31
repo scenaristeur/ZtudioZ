@@ -631,6 +631,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23.
 | D21 | **Déterminisme des media réels** : les clips synthétiques sont `bitexact` (retry = déduplication parfaite), un mp4/JPEG réel ne l'est pas — la déduplication par contenu n'y suffira pas | `tools/media.py`, `tools/images.py` | M4 |
 | D22 | **Le toolkit v1 (~25 outils MCP) n'est pas exposé** : le mécanisme marche, il manque le serveur (camel, context `projets/`) et ses fiches d'outils dans le registre | `pipeline/ztudioz_toolkit.py` v1, `tools.yamlld` | M3 — exposition, pas duplication |
 | D23 | **Le verdict vision est un proxy texte** : le noeud recoit des references d'artefacts, pas les pixels ; un reel `continuity-checker` refuse donc a juste titre (`ok=false`) | `catalog/agents/continuity-checker.yamlld`, `_exec_agent` | M4 : entrees multimodales des providers LLM |
+| D24 | **Les contraintes du brief ne voyagent pas jusqu'aux plans** : la démo « feu-follet » (max 2 plans demandés) a produit 6 shots — m1-scene ne reçoit que le `treatment`, pas le brief. Il faut un contexte projet porté par le graphe (ou passer `brief` en entrée de m1) | `catalog/workflows/m1-scene.yamlld` | M3 (contexte projet) — ou colmatage immédiat si le besoin presse |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles
