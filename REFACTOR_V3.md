@@ -6,8 +6,9 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés** — noyau complet, artefacts binaires typés et lignés,
 > adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par ffprobe,
-> échec d'item borné, sous-workflows, retry de gate, SIGINT, 80 tests verts, démos CLI
-> M0/M1/M2 fonctionnelles (0 appel réseau en test ; run réel LLM via Albert validé).
+> échec d'item borné, sous-workflows, retry de gate, SIGINT, 104 tests verts, démos CLI
+> M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
+> Pollinations pour les images, RIA respecte les quotas annoncés).
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
@@ -146,16 +147,16 @@ studio/
     errors.py      StudioError, LoadError, GraphError, GateError, BudgetError, SchemaError
   tools/
     llm.py         Provider (protocole) · MockProvider · OpenAICompatProvider
-    images.py      ImageProvider (protocole) · MockImageProvider · OpenAICompatImageProvider
+    images.py      ImageProvider · MockImageProvider · OpenAICompat · Pollinations (quotas respectés)
     media.py       outils livrés : clip (lavfi), montage (concat), probe (ffprobe)
   catalog/
     agents/*.yamlld      déclarations d'agents (LlmAgent, ImageAgent, ToolAgent)
     workflows/*.yamlld   déclarations de graphes (m0, m1, m2)
     skills/<id>/SKILL.md packs de connaissance injectés dans les prompts
     schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
-    tools.yamlld         registre des capacités (kind: python | cli | mcp)
-  cli.py           run | journal | validate | invalidate
-tests/             19 fichiers, 80 tests
+    tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
+  cli.py           run | journal | validate | invalidate | --skills-root
+tests/             22 fichiers, 104 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -246,8 +247,8 @@ Réalité M2 : le dispatch tourne pour `python` et `cli`.
   binaire, référencé, ligné comme une image).
 - **cli** : `command: [argv…]`, substitution `${param}` dans les arguments, stdout capturé →
   `{"stdout", "exit"}` ; un code retour non nul est un échec d'outil net, journalisé.
-- **mcp** : **refusé à l'exécution**, message explicite — le branchement sur le toolkit v1
-  (`ztudioz_toolkit`, ~25 outils) est une affaire de M3 (dette D19), pas d'à-peu-près.
+- **mcp** : client stdio branché (post-M2) sur la table `servers:` du registre, avec
+  mapping `arguments:` ; le toolkit v1 reste à exposer (dette D22, M3).
 
 Un `ToolAgent` déclare **exactement un outil** ; son coût (`cost:` de l'entrée de registre)
 est estimé avant exécution, refusé avant appel si hors budget. La règle d'enveloppe : si la
@@ -331,9 +332,15 @@ tools:
     tool: describe_sheet
 ```
 
-Réalité M2 : le dispatch est câblé pour `python` et `cli` (§6.3) et trois outils sont livrés
-(`media.clip`, `media.montage`, `media.probe`) ; `vision.describe` reste déclaré et **refusé
-à l'exécution** tant que le dispatch MCP n'est pas branché sur le toolkit v1 — ce sera M3.
+Réalité post-M2 : le dispatch tourne pour `python`, `cli` **et `mcp`**. Les outils MCP
+déclarent leur serveur dans une table `servers:` du même `tools.yamlld` (commande stdio +
+args + env) et un mapping `arguments:` traduit les entrées du nœud en arguments de l'outil
+(`text: "${message}"`). Les résultats texte sont rendus `{"text": ...}`, ceux qui sont du
+JSON sont parsés. Testé contre un serveur jouet (`mcp` 2.x, extra optionnel du pyproject).
+
+Reste à faire : brancher le **toolkit v1** (`ztudioz_toolkit`, ~25 outils, serveur camel) —
+c'est de l'exposition, pas du mécanisme (dette D22). `vision.describe` reste une déclaration
+dont le serveur n'existe pas encore sur cette branche.
 
 ### 6.7 Artefacts
 
@@ -467,6 +474,16 @@ Tests ajoutés à M2 (rouges d'abord) — **+24 tests, 80 verts** :
 | `test_m2_e2e.py` | 4 | catalogue livré : gate montage, mp4 sur disque (3 clips + 1), probe conforme, 2ᵉ run sans production, item maudit n'arrête pas le run |
 | `test_cli_ops.py` | 2 | **SIGINT → code 130, relance reprend** ; `studio invalidate <hash>` purgne l'aval |
 
+Tests ajoutés après M2 (run réel & branchements) — **+24 tests, 104 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_mcp_dispatch.py` | 4 | serveur stdio réel (mcp 2.x), texte et JSON parsés, cache, serveur inconnu = échec net |
+| `test_pollinations.py` | 14 | URL déterministe (seed = prompt+ref), sniff media-type, délais annoncés honorés (402/503, FREE_LIMIT comme SERVICE_UNAVAILABLE), sériage 45 s, backoff, élévation d'erreur nette |
+| `test_skills_roots.py` | 4 | `extra_skill_roots` charge des packs externes, `--skills-root` au CLI, et les 11 skills v1 sont des packs valides (skip si dépôt v1 absent) |
+| `test_images.py` (+2) | 2 | `_text_prompt` : phrase naturelle du plan, pas de bloc JSON dans le prompt d'image |
+| `test_m1_e2e.py` (+1) | 1 | `notes` du verdict : chaîne ou liste, selon le schéma élargi |
+
 ---
 
 ## 9. Garde-fous
@@ -528,7 +545,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 80 passed
+.venv/bin/python -m pytest tests/      # 104 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -574,14 +591,20 @@ condition de :
 | 2026-10-31 | M2 | **Sous-workflow par `Executor` enfant** : même store/journal, sous-run `run#node`, gates exposées préfixées (`render/gate_x`) ; le cache du nœud parent évite de rejouer l'intier | assistant |
 | 2026-10-31 | M2 | D16 **reportée en M3** (honnêteté) : l'absorption d'`ImageAgent` par le dispatch exige que les impls du registre voient les adaptateurs providers — branchement M3 (`config.yaml` v1 `providers[]`) | assistant |
 | 2026-10-31 | M2 | Démo validée en attente humaine : `m2-montage` bloque à la gate, retry, `continue` → probe `{duration: 1.2, codec: h264}` sur 4 mp4 (3 clips + 1 montage) | assistant |
+| 2026-10-31 | M2+ | **Dispatch MCP branché** (D19 clos) : client stdio mcp 2.x, table `servers:`, mapping `arguments:`, résultats JSON parsés — mécanisme prouvé contre serveur jouet ; exposition du toolkit v1 reportée (D22, M3) | assistant |
+| 2026-10-31 | M2+ | **Skills v1 joignables** (D15 clos) : CLI `--skills-root`, les 11 packs `.opencode/skills/ztudioz-*` chargés à côté des packs v3 — lecture seule stricte du dépôt v1 | assistant |
+| 2026-10-31 | M2+ | **Run réel M1 complet** (D14 clos, texte + images) : Albert pour les plans, Pollinations pour 4 JPEG réels. Découverte API : quota double (par IP `FREE_LIMIT` 45 s, global `SERVICE_UNAVAILABLE`), rendu en 402 comme en 503 — l'adaptateur honore le délai annoncé et se série lui-même | assistant + providers |
+| 2026-10-31 | M2+ | Le contrat de sortie a fait son travail : gpt-oss a rendu `notes` en liste, refusé par le schéma, puis accepté — `verdict.schema.json` élargi à `oneOf` chaîne/liste. Le verdict réel reste `ok=false` : le contrôleur ne voit pas les pixels (dette D23, multimodal = M4) | assistant |
+| 2026-10-31 | M2+ | Prompt d'image naturel : `_text_prompt` extrait la phrase du plan au lieu d'un bloc JSON — les providers d'images ne veulent pas de JSON dans le prompt | assistant |
 
 ---
 
 ## 12. Dette technique — ce qui est déclaré mais non réalisé
 
 Liste volontairement exhaustive : c'est le carnet de charges du palier suivant, et ce qui
-empêche de croire que le noyau est fini. D1–D3 clos en M1 ; D4–D9, D13, D17, D18 clos en M2 ;
-D19–D21 ouvertes en M2 ; restent ouverts D10–D12, D14–D16, D19–D21.
+empêche de croire que le noyau est fini. Clos : D1–D3 (M1), D4–D9, D13, D17, D18 (M2),
+D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp).
+Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23.
 
 | # | Écart | Onde le voir | À traiter |
 |---|---|---|---|
@@ -598,14 +621,16 @@ D19–D21 ouvertes en M2 ; restent ouverts D10–D12, D14–D16, D19–D21.
 | D11 | **Budget = coût fixe par appel** (`provider.estimate()`, `cost` de l'entrée d'outil), pas de coût réel token/image | `tools/llm.py`, `tools/images.py`, `tools.yamlld` | M3 |
 | D12 | **Un seul agent par nœud** : pas de fan-out multi-agent ni de vote/consensus entre agents | `graph.Node` | M3 |
 | ~~D13~~ | ~~`SIGINT` non rattrapé dans le CLI~~ | **clos en M2** : code 130, message de reprise, journal intact — reprise prouvée par test subprocess | — |
-| D14 | **Premier run réel exercé le 2026-10-31** : `OpenAICompatProvider` validé contre Albert (etalab, `openai/gpt-oss-120b`) sur M0 complet et M1 (5 shots réels, verdict honnête). `OpenAICompatImageProvider` reste **non exercé** : Albert n'expose pas d'endpoint de génération d'images | `tools/llm.py` (clos), `tools/images.py` (reste) | M3/M4 quand un provider images réel sera branché |
-| D15 | Les **11 skills v1 ne sont pas encore joignables** : seuls les packs de `catalog/skills/` le sont | `load_registry(extra_skill_roots=...)` | M3 |
+| D14 | **Clos en run réel (2026-10-31, deux fournisseurs)** : `OpenAICompatProvider` exercé contre Albert (etalab) sur M0+M1 ; `PollinationsImageProvider` exercé sur M1 complet (4 JPEG réels, 9-21 Ko, seeds deterministes) — quota gratuit respecte les delais annonces par l'API (`Retry after Ns`), seriage 1 image / 45 s. `OpenAICompatImageProvider` ecrit, non exerce (faute d'endpoint chez Albert) | `tools/llm.py`, `tools/images.py` | — |
+| ~~D15~~ | ~~Les 11 skills v1 ne sont pas joignables~~ | **clos** : CLI `--skills-root` (repetable) ; les 11 packs `.opencode/skills/ztudioz-*` se chargent en plus des 2 packs v3 (13 au total), lecture seule sur v1 | — |
 | D16 | **`ImageAgent` n'est pas encore absorbé par le dispatch** : les impls `python` du registre ne voient pas les adaptateurs injectés à l'exécuteur (`image=`) ; l'unification attend le branchement providers du M3 (`config.yaml` v1 `providers[]`) | `executor._exec_image`, `dispatch.run_tool` | M3 |
 | ~~D17~~ | ~~`invalidate()` non exposé~~ | **clos en M2** : `studio invalidate <hash>` | — |
 | ~~D18~~ | ~~`foreach` impose le nom `item`~~ | **clos en M2** : `as: shot` injecte l'item sous le nom déclaré (`item` reste disponible) | — |
-| D19 | **Dispatch `kind: mcp` refusé à l'exécution** : le toolkit v1 (~25 outils, camel `MCPServer`) n'est pas branché ; `vision.describe` reste une déclaration morte en exécution | `dispatch.run_tool` (branche mcp) | M3 — exposition du toolkit, pas duplication |
+| ~~D19~~ | ~~Dispatch `kind: mcp` refusé~~ | **clos** : client stdio + table `servers:` + mapping `arguments:` ; testé contre serveur jouet mcp 2.x | — |
 | D20 | **Un seul outil par `ToolAgent`** : la convention « exactement un outil déclaré » évite le routage multi-outils ; un agent qui compose deux outils n'existe pas | `executor._exec_tool` | M3 si le besoin apparaît |
-| D21 | **Déterminisme des media réels** : les clips synthétiques sont `bitexact` (retry = déduplication parfaite), un mp4 de caméra réelle ne l'est pas — la déduplication par contenu n'y suffira pas | `tools/media.py` | M4 |
+| D21 | **Déterminisme des media réels** : les clips synthétiques sont `bitexact` (retry = déduplication parfaite), un mp4/JPEG réel ne l'est pas — la déduplication par contenu n'y suffira pas | `tools/media.py`, `tools/images.py` | M4 |
+| D22 | **Le toolkit v1 (~25 outils MCP) n'est pas exposé** : le mécanisme marche, il manque le serveur (camel, context `projets/`) et ses fiches d'outils dans le registre | `pipeline/ztudioz_toolkit.py` v1, `tools.yamlld` | M3 — exposition, pas duplication |
+| D23 | **Le verdict vision est un proxy texte** : le noeud recoit des references d'artefacts, pas les pixels ; un reel `continuity-checker` refuse donc a juste titre (`ok=false`) | `catalog/agents/continuity-checker.yamlld`, `_exec_agent` | M4 : entrees multimodales des providers LLM |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles

@@ -168,3 +168,38 @@ inputs:
     assert state.artifacts["ref"] in used.parents  # le noeud aval reference son amont
     binary_key = executor.store.get(state.artifacts["ref"])["image"]["artifact"]
     assert binary_key in used.parents  # et jusqu'au binaire consomme
+
+
+def test_image_prompt_is_natural_text_not_json_blob(tmp_path):
+    agent = IMAGE_AGENT + """
+inputs:
+  shot:
+    type: string
+    required: true
+"""
+    workflow = """
+"@id": "studio:workflow/natural"
+type: studio:Workflow
+inputs:
+  shot: {type: string, required: true}
+nodes:
+  - id: img
+    agent: studio:agent/pixel
+"""
+    executor, _, image = make(tmp_path, workflow, "natural", agents={"pixel": agent})
+
+    asyncio.run(executor.run("studio:workflow/natural", {"shot": "gros plan sur la lanterne"}))
+
+    assert image.records[-1]["prompt"] == "gros plan sur la lanterne"
+
+
+def test_image_prompt_prefers_the_shot_prompt_field(tmp_path):
+    from studio.kernel.executor import Executor
+
+    assert Executor._text_prompt({"shot": "texte libre"}) == "texte libre"
+    assert Executor._text_prompt(
+        {"item": {"id": 3, "prompt": "la mer repond"}, "reference": {"artifact": "abc"}}
+    ) == "la mer repond"
+    import json as _json
+
+    assert _json.loads(Executor._text_prompt({"a": 1, "b": 2})) == {"a": 1, "b": 2}

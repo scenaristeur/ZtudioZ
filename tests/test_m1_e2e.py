@@ -87,6 +87,15 @@ def test_verdict_is_validated_against_its_schema(tmp_path):
     jsonschema.validate(result.outputs["verdict"], schema)
 
 
+def test_verdict_notes_accepte_chaine_ou_liste():
+    """Un modele reel repond souvent en liste de remarques : le contrat l'admet."""
+    import jsonschema as js
+
+    schema = json.loads((STUDIO_ROOT / "catalog" / "schemas" / "verdict.schema.json").read_text())
+    js.validate({"ok": False, "notes": "une seule chaine"}, schema)
+    js.validate({"ok": False, "notes": ["premier motif", "second motif"]}, schema)
+
+
 def test_gate_on_images_blocks_without_answer(tmp_path):
     executor, provider, image = make(tmp_path)
 

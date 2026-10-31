@@ -440,7 +440,7 @@ class Executor:
                 agent_id=agent["@id"],
                 model=agent.get("model", ""),
                 system=self._system(agent),
-                prompt=json.dumps(resolved, ensure_ascii=False, sort_keys=True),
+                prompt=self._text_prompt(resolved),
                 reference=reference,
             )
 
@@ -475,11 +475,7 @@ class Executor:
         tool_name = names[0]
         entry = self.registry.tool(tool_name)
         kind = entry.get("kind")
-        if kind == "mcp":
-            raise LoadError(
-                f"noeud {node.id}: l'outil {tool_name} (kind: mcp) attend le dispatch MCP de M3"
-            )
-        if kind not in ("python", "cli"):
+        if kind not in ("python", "cli", "mcp"):
             raise LoadError(f"noeud {node.id}: outil {tool_name}: kind invalide: {kind!r}")
 
         resolved = self._resolve_inputs(agent, scope)
@@ -705,6 +701,22 @@ class Executor:
             if name not in produced:
                 raise SchemaError(f"noeud {node.id}: sortie manquante: {name}")
             jsonschema.validate(produced[name], self.registry.schema(spec["schema"]))
+
+    @staticmethod
+    def _text_prompt(resolved: dict[str, Any]) -> str:
+        """Un prompt naturel pour la generation d'images ; le JSON en dernier recours.
+
+        Regle : la premiere cle 'prompt' d'une entree objet, sinon la premiere entree
+        textuelle, sinon le JSON complet resolve. Les providers d'images ne veulent pas
+        d'un bloc JSON : ils veulent la phrase du plan.
+        """
+        for value in resolved.values():
+            if isinstance(value, dict) and isinstance(value.get("prompt"), str):
+                return value["prompt"]
+        for value in resolved.values():
+            if isinstance(value, str):
+                return value
+        return json.dumps(resolved, ensure_ascii=False, sort_keys=True)
 
     def _resolve(self, expression: str, scope: dict[str, Any]) -> Any:
         if not expression.startswith("${") or not expression.endswith("}"):

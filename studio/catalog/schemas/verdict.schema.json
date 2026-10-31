@@ -7,6 +7,11 @@
   "additionalProperties": false,
   "properties": {
     "ok": {"type": "boolean"},
-    "notes": {"type": "string"}
+    "notes": {
+      "oneOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"type": "string", "minLength": 1}}
+      ]
+    }
   }
 }

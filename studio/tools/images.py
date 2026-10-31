@@ -188,4 +188,158 @@ class OpenAICompatImageProvider:
         return await asyncio.to_thread(call)
 
 
-__all__ = ["ImageProvider", "MockImageProvider", "OpenAICompatImageProvider", "encode_png"]
+class PollinationsImageProvider:
+    """Adaptateur reel (https://image.pollinations.ai) : GET encode, type de media sniff er.
+
+    La cle API, si presente, voyage en en-tete — jamais dans l'URL. La graine derive
+    du prompt et de la reference : deux relances du meme plan produisent la meme image.
+    """
+
+    def __init__(
+        self,
+        base: str = "https://image.pollinations.ai",
+        model: str = "flux",
+        api_key_env: str = "POLLINATION_API_KEY",
+        width: int = 512,
+        height: int = 512,
+        cost: float = 0.0,
+        max_retries: int = 5,
+        min_interval: float = 45.0,
+    ):
+        self.base = base.rstrip("/")
+        self.model = model
+        self.api_key_env = api_key_env
+        self.width = width
+        self.height = height
+        self.cost = cost
+        self.max_retries = max_retries
+        self.min_interval = min_interval
+        self._gate = asyncio.Lock()
+        self._last_call: float | None = None
+
+    def estimate(self) -> float:
+        """Cout declare par image ; Pollinations est gratuit sous quota."""
+        return self.cost
+
+    async def generate(
+        self,
+        *,
+        agent_id: str,
+        model: str,
+        system: str,
+        prompt: str,
+        reference: Binary | None = None,
+    ) -> Binary:
+        """Telecharge l'image en respectant le rythme annonce — un appel a la fois."""
+        import hashlib
+        from urllib.parse import quote
+
+        ref_hash = reference.hash if isinstance(reference, Binary) else ""
+        seed = int.from_bytes(hashlib.sha256(f"{prompt}|{ref_hash}".encode()).digest()[:8], "big")
+        url = (
+            f"{self.base}/prompt/{quote(prompt, safe='')}"
+            f"?model={self.model}&width={self.width}&height={self.height}"
+            f"&seed={seed}&nologo=true&safe=true"
+        )
+        api_key = os.environ.get(self.api_key_env, "") if self.api_key_env else ""
+
+        async with self._gate:
+            import time
+
+            now = time.monotonic()
+            if self._last_call is not None and self.min_interval > 0:
+                wait = self.min_interval - (now - self._last_call)
+                if wait > 0:
+                    await asyncio.to_thread(_sleep, wait)
+            try:
+                return await self._fetch(url, api_key or None)
+            finally:
+                self._last_call = time.monotonic()
+
+    async def _fetch(self, url: str, api_key: str | None) -> Binary:
+        import urllib.error
+
+        last_exc: OSError | None = None
+        for attempt in range(self.max_retries + 1):
+            delay: float | None = None
+            try:
+                data, content_type = await asyncio.to_thread(_http_get, url, api_key or None)
+                return Binary(data, _detect_media_type(data, content_type))
+            except urllib.error.HTTPError as exc:
+                last_exc = exc
+                delay = _rate_limit_delay(exc)
+                if delay is None and exc.code in (429, 500, 502, 503, 504):
+                    delay = 5.0 * (2**attempt)  # incident passager sans delai annonce
+            except OSError as exc:
+                last_exc = exc
+                delay = 5.0 * (2**attempt)  # panne reseau : meme politesse
+            if delay is not None and attempt < self.max_retries:
+                await asyncio.to_thread(_sleep, delay)
+                continue
+            break
+        raise RuntimeError(f"pollinations: echec ({last_exc})") from last_exc
+
+
+def _http_get(url: str, token: str | None = None, timeout: float = 120.0) -> tuple[bytes, str]:
+    """GET minimal ; separe pour que les tests restent hors reseau."""
+    import urllib.request
+
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read(), response.headers.get("Content-Type", "")
+
+
+def _sleep(seconds: float) -> None:
+    """Point de sommeil isolé, bouchonné en test."""
+    import time
+
+    time.sleep(seconds)
+
+
+def _rate_limit_delay(exc) -> float | None:
+    """Si l'erreur HTTP annonce un rythme (« Retry after Ns »), on le retourne borne.
+
+    Le tier gratuit connait deux limitations : par IP (FREE_LIMIT) et globale
+    (SERVICE_UNAVAILABLE), presentees tantot en 402, tantot en 503. L'important
+    est le delai annonce, pas le code.
+    """
+    import json
+    import re
+
+    if getattr(exc, "code", 0) not in (402, 429, 500, 502, 503, 504):
+        return None
+    try:
+        payload = json.loads(exc.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+    error = payload.get("error") or {}
+    message = str(error.get("message", ""))
+    match = re.search(r"Retry after (\d+)s", message)
+    if match:
+        return min(float(match.group(1)), 90.0)
+    if error.get("code") in ("FREE_LIMIT", "SERVICE_UNAVAILABLE"):
+        return 45.0
+    return None
+
+
+def _detect_media_type(data: bytes, content_type: str) -> str:
+    for known in ("image/png", "image/jpeg", "image/webp"):
+        if known in content_type:
+            return known
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+__all__ = [
+    "ImageProvider",
+    "MockImageProvider",
+    "OpenAICompatImageProvider",
+    "PollinationsImageProvider",
+    "encode_png",
+]

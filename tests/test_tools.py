@@ -262,7 +262,9 @@ nodes:
 """
 
 
-def test_mcp_tool_is_refused_at_runtime(tmp_path):
+def test_mcp_without_declared_server_fails_cleanly(tmp_path):
+    # D19 : le kind mcp est cable, mais un serveur non declare dans `servers:`
+    # doit echouer net, pas partir en pendule
     executor, _ = make(tmp_path, SEEKER_WF, "seek", {"seeker": SEEKER}, MCP_TOOLS)
 
     result = asyncio.run(executor.run("studio:workflow/seek", {"sheet": "planche"}))

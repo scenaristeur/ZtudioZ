@@ -39,7 +39,7 @@ WORKFLOW_KEYS = {
     "nodes",
 }
 
-TOOLS_KEYS = {"@id", "name", "tools"}
+TOOLS_KEYS = {"@id", "name", "tools", "servers"}
 
 
 def _read_yaml(path: Path) -> dict:
@@ -62,11 +62,13 @@ class Registry:
         workflows: dict[str, dict],
         tools: dict[str, dict],
         skills: dict[str, str],
+        servers: dict[str, dict] | None = None,
     ):
         self.root = Path(root)
         self.agents = agents
         self.workflows = workflows
         self.tools = tools
+        self.servers = servers or {}
         self.skills = skills
         self._graphs: dict[str, Graph] = {}
 
@@ -117,19 +119,25 @@ class Registry:
         return key
 
 
-def _load_tools(catalog: Path) -> dict[str, dict]:
+def _load_tools(catalog: Path) -> tuple[dict[str, dict], dict[str, dict]]:
     path = catalog / "tools.yamlld"
     if not path.exists():
-        return {}
+        return {}, {}
     doc = expand_document(_read_yaml(path), TOOLS_KEYS, str(path))
     tools = doc.get("tools") or {}
     if not isinstance(tools, dict):
         raise LoadError(f"{path}: 'tools' doit etre un mapping")
+    servers = doc.get("servers") or {}
+    if not isinstance(servers, dict):
+        raise LoadError(f"{path}: 'servers' doit etre un mapping")
     for name, entry in tools.items():
         kind = (entry or {}).get("kind") if isinstance(entry, dict) else None
         if kind is not None and kind not in {"python", "cli", "mcp"}:
             raise LoadError(f"outil {name}: kind invalide: {kind!r} (attendu python | cli | mcp)")
-    return tools
+    for name, spec in servers.items():
+        if not isinstance(spec, dict) or not spec.get("command"):
+            raise LoadError(f"serveur {name}: 'command' requis pour un serveur stdio")
+    return tools, servers
 
 
 def _load_documents(folder: Path, keys: set[str]) -> dict[str, dict]:
@@ -176,13 +184,15 @@ def load_registry(root: str | Path = STUDIO_ROOT, extra_skill_roots: list[Path] 
     if not catalog.exists():
         raise LoadError(f"{root}: dossier 'catalog' introuvable")
 
-    tools = _load_tools(catalog)
+    tools, servers = _load_tools(catalog)
     agents = _load_documents(catalog / "agents", AGENT_KEYS)
     workflows = _load_documents(catalog / "workflows", WORKFLOW_KEYS)
     skills = _load_skills(catalog, [Path(p) for p in (extra_skill_roots or [])])
 
     _validate_references(agents, tools, skills)
-    return Registry(root=root, agents=agents, workflows=workflows, tools=tools, skills=skills)
+    return Registry(
+        root=root, agents=agents, workflows=workflows, tools=tools, skills=skills, servers=servers
+    )
 
 
 __all__ = ["Registry", "load_registry", "STUDIO_ROOT", "CONTEXT_IRI"]

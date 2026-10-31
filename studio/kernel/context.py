@@ -45,6 +45,7 @@ CONTEXT: dict[str, Any] = {
     "server": "studio:server",
     "tool": "studio:tool",
     "impl": "studio:impl",
+    "servers": "studio:servers",
 }
 
 TERMS = {key for key in CONTEXT if not key.startswith("@") and key != "studio"}

@@ -13,7 +13,11 @@ from .kernel.context import short_iri
 from .kernel.executor import Executor
 from .kernel.journal import Journal
 from .kernel.registry import STUDIO_ROOT, load_registry
-from .tools.images import MockImageProvider, OpenAICompatImageProvider
+from .tools.images import (
+    MockImageProvider,
+    OpenAICompatImageProvider,
+    PollinationsImageProvider,
+)
 from .tools.llm import MockProvider, OpenAICompatProvider
 
 
@@ -39,18 +43,25 @@ def _build_image_provider(name: str):
 
     if name == "mock":
         return MockImageProvider(cost=float(os.environ.get("STUDIO_IMAGE_COST", "0")))
+    if name == "pollinations":
+        return PollinationsImageProvider(
+            model=os.environ.get("STUDIO_IMAGE_MODEL", "flux"),
+            width=int(os.environ.get("STUDIO_IMAGE_WIDTH", "512")),
+            height=int(os.environ.get("STUDIO_IMAGE_HEIGHT", "512")),
+            cost=float(os.environ.get("STUDIO_IMAGE_COST", "0")),
+        )
     if name == "openai":
         return OpenAICompatImageProvider(
             model=os.environ.get("STUDIO_IMAGE_MODEL", "gpt-image-1"),
             base_url=os.environ.get("STUDIO_IMAGE_URL", "https://api.openai.com/v1"),
             cost=float(os.environ.get("STUDIO_IMAGE_COST", "0")),
         )
-    raise SystemExit(f"provider inconnu: {name}")
+    raise SystemExit(f"provider d'images inconnu: {name}")
 
 
 def cmd_validate(args) -> int:
     try:
-        registry = load_registry(args.root)
+        registry = load_registry(args.root, extra_skill_roots=args.skills_root)
         for workflow_id in sorted(registry.workflows):
             registry.graph(workflow_id)
     except Exception as exc:
@@ -64,11 +75,13 @@ def cmd_validate(args) -> int:
     for workflow_id in sorted(registry.workflows):
         print(f"  {short_iri(workflow_id)}")
     print(f"skills: {len(registry.skills)}")
+    for name in sorted(registry.skills):
+        print(f"  {name}")
     return 0
 
 
 def cmd_run(args) -> int:
-    registry = load_registry(args.root)
+    registry = load_registry(args.root, extra_skill_roots=args.skills_root)
     inputs = json.loads(args.input)
     answers = dict(item.split("=", 1) for item in args.answer)
 
@@ -129,6 +142,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="studio", description="Runtime d'agents declaratif")
     parser.add_argument("--root", default=str(STUDIO_ROOT))
     parser.add_argument("--runs", default="runs")
+    parser.add_argument("--skills-root", action="append", default=[],
+                        help="racine externe de packs de connaissance (repetable)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate", help="valide tout le catalogue")
@@ -139,7 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--input", default="{}")
     run.add_argument("--answer", action="append", default=[])
     run.add_argument("--provider", default="mock", choices=["mock", "openai"])
-    run.add_argument("--image-provider", default=None, choices=["mock", "openai"])
+    run.add_argument("--image-provider", default=None, choices=["mock", "openai", "pollinations"])
     run.set_defaults(func=cmd_run)
 
     journal = sub.add_parser("journal", help="affiche le journal")
