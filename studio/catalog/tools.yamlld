@@ -1,0 +1,9 @@
+"@context": "studio:context"
+tools:
+  vision.describe:
+    kind: mcp
+    server: character-designer
+    tool: describe_sheet
+  llm.complete:
+    kind: python
+    impl: studio.tools.llm:Provider

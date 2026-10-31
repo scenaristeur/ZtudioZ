@@ -1,0 +1,24 @@
+"@context": "studio:context"
+"@id": "studio:workflow/m0-conversation"
+type: studio:Workflow
+name: Conversation vers traitement
+description: Palier M0 - d'une discussion brute a un traitement valide par l'humain.
+version: 1
+inputs:
+  discussion:
+    type: string
+    required: true
+nodes:
+  - id: sources
+    agent: studio:agent/source-reader
+  - id: brief
+    agent: studio:agent/brief-synthesizer
+    needs: [sources]
+  - id: gate_brief
+    type: studio:HumanGate
+    needs: [brief]
+    question: Le brief correspond-il a l'intention ?
+    options: [continue, retry, stop]
+  - id: treatment
+    agent: studio:agent/script-editor
+    needs: [brief, gate_brief]

@@ -1,0 +1,22 @@
+"@context": "studio:context"
+"@id": "studio:agent/source-reader"
+type: studio:LlmAgent
+name: Lecteur de sources
+description: Extrait les faits saillants d'une discussion brute, sans rien inventer.
+version: 1
+model: mock/echo
+prompt: |
+  Tu lis une discussion brute entre l'auteur et son assistant de production.
+  Tu en extrais uniquement les faits saillants : intention, images fortes,
+  personnages evoques, lieux, contraintes. Tu n'inventes rien.
+  Tu reponds en JSON avec la cle "notes".
+skills:
+  - production-interview
+inputs:
+  discussion:
+    type: string
+    required: true
+outputs:
+  notes:
+    type: string
+budget: 0.05

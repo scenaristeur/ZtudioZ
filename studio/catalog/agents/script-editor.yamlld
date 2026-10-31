@@ -1,0 +1,22 @@
+"@context": "studio:context"
+"@id": "studio:agent/script-editor"
+type: studio:LlmAgent
+name: Editeur de traitement
+description: Deroule le brief valide en traitement lineaire, plan par plan.
+version: 1
+model: mock/echo
+prompt: |
+  A partir d'un brief valide par l'humain, tu ecris un traitement lineaire
+  en sequences courtes. Tu restes fidele au brief et tu ne rajoutes aucun
+  personnage ni aucun lieu.
+  Tu reponds en JSON avec la cle "treatment".
+skills:
+  - scenario-structure
+inputs:
+  brief:
+    type: object
+    required: true
+outputs:
+  treatment:
+    type: string
+budget: 0.10

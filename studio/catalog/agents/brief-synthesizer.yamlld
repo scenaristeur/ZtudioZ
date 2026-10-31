@@ -1,0 +1,26 @@
+"@context": "studio:context"
+"@id": "studio:agent/brief-synthesizer"
+type: studio:LlmAgent
+name: Synthetiseur de brief
+description: Transforme des notes de discussion en brief structure et validable.
+version: 1
+model: mock/echo
+prompt: |
+  A partir des notes et de la discussion, tu produis un brief de production :
+  logline, synopsis, personnages, lieux, questions ouvertes.
+  Tu ne decides rien : les questions ouvertes sont la pour l'humain.
+  Tu reponds en JSON avec la cle "brief".
+skills:
+  - scenario-structure
+inputs:
+  notes:
+    type: string
+    required: true
+  discussion:
+    type: string
+    required: true
+outputs:
+  brief:
+    type: object
+    schema: catalog/schemas/brief.schema.json
+budget: 0.10

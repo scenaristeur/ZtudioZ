@@ -1,0 +1,11 @@
+[project]
+name = "ztudioz-studio"
+version = "0.1.0"
+description = "Runtime d'agents declaratif pour la production ZtudioZ"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0", "jsonschema>=4.0", "pyld>=2.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
