@@ -246,6 +246,7 @@ class Executor:
                 system=self._system(agent),
                 prompt=json.dumps(resolved, ensure_ascii=False, sort_keys=True),
                 schema=self._output_schema(agent),
+                output_key=self._output_key(agent),
             )
 
         if not isinstance(produced, dict):
@@ -277,9 +278,29 @@ class Executor:
         return "\n\n".join(part for part in parts if part)
 
     def _output_schema(self, agent: dict) -> dict | None:
-        for spec in (agent.get("outputs") or {}).values():
+        outputs = agent.get("outputs") or {}
+        if not outputs:
+            return None
+        # Si une sortie referene un fichier schema, l'utiliser tel quel.
+        for spec in outputs.values():
             if isinstance(spec, dict) and spec.get("schema"):
                 return self.registry.schema(spec["schema"])
+        # Sinon, construire le schema de CHAQUE sortie individuellement.
+        schemas: list[dict] = []
+        for name, spec in outputs.items():
+            if isinstance(spec, dict):
+                schemas.append({"type": spec.get("type", "string")})
+        if not schemas:
+            return None
+        if len(schemas) == 1:
+            return schemas[0]
+        return {"type": "object", "properties": {name: schemas[i] for i, name in enumerate(outputs.keys())}}
+
+    @staticmethod
+    def _output_key(agent: dict) -> str | None:
+        """Retourne le nom de la premiere cle de sortie declaree, ou None."""
+        for name in (agent.get("outputs") or {}).keys():
+            return name
         return None
 
     def _validate_outputs(self, node: Node, agent: dict, produced: dict) -> None:

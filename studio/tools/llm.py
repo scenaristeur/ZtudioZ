@@ -22,6 +22,7 @@ class Provider(Protocol):
         system: str,
         prompt: str,
         schema: dict | None = None,
+        output_key: str | None = None,
     ) -> dict:
         """Produit une sortie structuree pour un agent."""
 
@@ -60,8 +61,9 @@ class MockProvider:
         system: str,
         prompt: str,
         schema: dict | None = None,
+        output_key: str | None = None,
     ) -> dict:
-        """Retourne la reponse pre-enregistree pour cet agent."""
+        """Retourne la reponse pre-enregistree ou genere une reponse par defaut."""
         self._active += 1
         self.max_concurrency = max(self.max_concurrency, self._active)
         self.calls += 1
@@ -71,11 +73,11 @@ class MockProvider:
         try:
             if self.delay:
                 await asyncio.sleep(self.delay)
-            return self._payload(agent_id, prompt, schema)
+            return self._payload(agent_id, prompt, schema, output_key)
         finally:
             self._active -= 1
 
-    def _payload(self, agent_id: str, prompt: str, schema: dict | None) -> dict:
+    def _payload(self, agent_id: str, prompt: str, schema: dict | None, output_key: str | None) -> dict:
         short = agent_id.rsplit("/", 1)[-1]
         for key in (agent_id, short):
             if key in self.responses:
@@ -83,20 +85,38 @@ class MockProvider:
                 return value(prompt) if callable(value) else value
         if self.default is not None:
             return self.default(prompt) if callable(self.default) else self.default
-        # Fallback intelligent : si un schema de sortie est declare,
-        # on produit des valeurs factices conformes a la structure attendue.
+        # Fallback intelligent : on produit un objet conforme au schema.
         if schema:
-            out: dict[str, Any] = {}
-            for name, spec in schema.get("properties", {}).items():
-                if spec.get("type") == "string":
-                    out[name] = prompt[:80]
-                elif spec.get("type") == "array":
-                    out[name] = [prompt[:40]]
-                elif spec.get("type") == "object":
-                    out[name] = {}
-            if out:
-                return out
+            props = schema.get("properties", {})
+            if props:
+                # Le schema contient les proprietes de sortie : on les genere
+                # directement. Si un output_key est declare, on enveloppe.
+                value = {name: self._fake_value(spec) for name, spec in props.items()}
+                if output_key:
+                    return {output_key: value}
+                return value
+            value = self._fake_value(schema)
+            if output_key:
+                return {output_key: value}
+            return value
         return {"text": prompt[:160]}
+
+    @staticmethod
+    def _fake_value(spec: dict) -> Any:
+        t = spec.get("type")
+        if t == "string":
+            return "valeur generée par le mock"
+        if t == "array":
+            return ["élément généré"]
+        if t == "object":
+            # Si c'est un objet avec un $ref ou properties, generer recursivement.
+            if "$ref" in spec:
+                return {}
+            props = spec.get("properties", {})
+            if props:
+                return {name: MockProvider._fake_value(sub) for name, sub in props.items()}
+            return {}
+        return ""
 
 
 class OpenAICompatProvider:
@@ -128,6 +148,7 @@ class OpenAICompatProvider:
         system: str,
         prompt: str,
         schema: dict | None = None,
+        output_key: str | None = None,
     ) -> dict:
         """Appelle l'API et retourne le JSON parse, valide par le noyau."""
         import json
