@@ -1,0 +1,25 @@
+"@context": "studio:context"
+"@id": "studio:agent/continuity-checker"
+type: studio:LlmAgent
+name: Controleur de continuite
+description: Verifie que chaque image tient le plan annonce et la reference visuelle.
+version: 1
+model: mock/echo
+prompt: |
+  Tu recois la liste des images produites, chacune referencee par son artefact.
+  Tu compares chaque plan a l'intention du traitement et a la reference.
+  Tu ne decides rien : un doute se traduit par ok=false et une note pour l'humain.
+  Tu reponds en JSON avec la cle "verdict" : {"ok", "notes"}.
+skills:
+  - scenario-structure
+tools:
+  - vision.describe
+inputs:
+  images:
+    type: array
+    required: true
+outputs:
+  verdict:
+    type: object
+    schema: catalog/schemas/verdict.schema.json
+budget: 0.02

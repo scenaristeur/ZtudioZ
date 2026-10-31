@@ -55,6 +55,7 @@ class Executor:
         journal: Journal,
         answers: dict[str, str] | None = None,
         max_parallel: int = 8,
+        image: Any | None = None,
     ):
         self.registry = registry
         self.provider = provider
@@ -62,7 +63,10 @@ class Executor:
         self.journal = journal
         self.answers = dict(answers or {})
         self.max_parallel = max_parallel
+        self.image = image
         self._global = asyncio.Semaphore(max_parallel)
+        self._artifacts: dict[str, str] = {}
+        self._unit_costs: dict[str, float] = {}
 
     async def run(
         self,
@@ -82,6 +86,8 @@ class Executor:
         state = self.journal.state(run_id)
         merged = {**state.gate_answers, **self.answers, **dict(answers or {})}
         completed = set(state.completed)
+        self._artifacts = dict(state.artifacts)
+        self._unit_costs = {}
         values: dict[str, Any] = {}
         for event in self.journal.events():
             if event.get("run") != run_id or event.get("type") not in (
@@ -170,8 +176,13 @@ class Executor:
             raise GateError(f"reponse invalide pour {node.id}: {answer}")
 
         self.journal.append("gate_answered", run=run_id, node=node.id, answer=answer)
-        artifact = self.store.put({"answer": answer})
-        self.journal.append("node_finished", run=run_id, node=node.id, artifact=artifact)
+        artifact = self.store.put(
+            {"answer": answer}, parents=self._upstream(node), producer="studio:HumanGate", cost=0.0
+        )
+        self._artifacts[node.id] = artifact
+        self.journal.append(
+            "node_finished", run=run_id, node=node.id, artifact=artifact, cost=0.0
+        )
         return "stopped" if answer == "stop" else "continue"
 
     async def _exec_node(
@@ -190,8 +201,21 @@ class Executor:
                     return await self._exec_agent(node, agent, scope, run_id, f"{node.id}#{index}")
 
             outcomes = await asyncio.gather(*[one(i, item) for i, item in enumerate(items)])
-            artifact = self.store.put(outcomes)
-            self.journal.append("node_finished", run=run_id, node=node.id, artifact=artifact)
+            units = tuple(f"{node.id}#{index}" for index in range(len(items)))
+            total = sum(self._unit_costs.get(unit, 0.0) for unit in units)
+            artifact = self.store.put(
+                outcomes,
+                parents=tuple(
+                    hash_ for hash_ in (self._artifacts.get(unit) for unit in units) if hash_
+                ),
+                producer=agent["@id"],
+                cost=total,
+            )
+            self._artifacts[node.id] = artifact
+            self._unit_costs[node.id] = total
+            self.journal.append(
+                "node_finished", run=run_id, node=node.id, artifact=artifact, cost=total
+            )
             return outcomes
 
         scope = self._scope(node, inputs, values)
@@ -220,6 +244,9 @@ class Executor:
     async def _exec_agent(
         self, node: Node, agent: dict, scope: dict[str, Any], run_id: str, unit: str
     ) -> Any:
+        if str(agent.get("@type", "")).endswith("ImageAgent"):
+            return await self._exec_image(node, agent, scope, run_id, unit)
+
         resolved = self._resolve_inputs(agent, scope)
         cache_key = self.store.key(
             [node.id, agent["@id"], agent.get("version", 1), agent.get("model", ""),
@@ -227,13 +254,14 @@ class Executor:
         )
         cached = self.store.cached(cache_key)
         if cached is not None:
+            self._unit_costs[unit] = 0.0
             self.journal.append(
-                "node_skipped", run=run_id, node=unit, artifact=cached, reason="cache"
+                "node_skipped", run=run_id, node=unit, artifact=cached, reason="cache", cost=0.0
             )
             return self.store.get(cached)
 
         budget = agent.get("budget")
-        cost = self.provider.estimate()
+        cost = float(self.provider.estimate())
         if budget is not None and cost > float(budget):
             raise BudgetError(
                 f"budget depasse pour {node.id}: cout estime {cost} > budget {budget}"
@@ -253,10 +281,112 @@ class Executor:
             produced = {"text": produced}
         self._validate_outputs(node, agent, produced)
 
-        artifact = self.store.put(produced)
+        artifact = self.store.put(
+            produced,
+            parents=self._consumed(node, resolved),
+            producer=agent["@id"],
+            cost=cost,
+        )
         self.store.remember(cache_key, artifact)
-        self.journal.append("node_finished", run=run_id, node=unit, artifact=artifact)
+        self._artifacts[unit] = artifact
+        self._unit_costs[unit] = cost
+        self.journal.append(
+            "node_finished", run=run_id, node=unit, artifact=artifact, cost=cost
+        )
         return produced
+
+    async def _exec_image(
+        self, node: Node, agent: dict, scope: dict[str, Any], run_id: str, unit: str
+    ) -> Any:
+        """ImageAgent : meme contrat d'entrees/sorties qu'un LlmAgent, sortie binaire."""
+        if self.image is None:
+            raise LoadError(
+                f"noeud {node.id}: un ImageAgent demande un adaptateur image (parametre 'image')"
+            )
+
+        resolved = self._resolve_inputs(agent, scope)
+        cache_key = self.store.key(
+            [node.id, agent["@id"], agent.get("version", 1), agent.get("model", ""),
+             agent.get("prompt", ""), resolved, scope.get("item")]
+        )
+        cached = self.store.cached(cache_key)
+        if cached is not None:
+            self._unit_costs[unit] = 0.0
+            self.journal.append(
+                "node_skipped", run=run_id, node=unit, artifact=cached, reason="cache", cost=0.0
+            )
+            return self.store.get(cached)
+
+        budget = agent.get("budget")
+        cost = float(self.image.estimate())
+        if budget is not None and cost > float(budget):
+            raise BudgetError(
+                f"budget depasse pour {node.id}: cout estime {cost} > budget {budget}"
+            )
+
+        reference = self._reference(resolved)
+        async with self._global:
+            binary = await self.image.generate(
+                agent_id=agent["@id"],
+                model=agent.get("model", ""),
+                system=self._system(agent),
+                prompt=json.dumps(resolved, ensure_ascii=False, sort_keys=True),
+                reference=reference,
+            )
+
+        name = self._output_key(agent) or "image"
+        produced = {name: binary.ref()}
+        self._validate_outputs(node, agent, produced)
+
+        consumed = self._consumed(node, resolved)
+        binary_key = self.store.put(
+            binary, parents=consumed, producer=agent["@id"], cost=cost
+        )
+        artifact = self.store.put(
+            produced, parents=(binary_key, *consumed), producer=agent["@id"], cost=cost
+        )
+        self.store.remember(cache_key, artifact)
+        self._artifacts[unit] = artifact
+        self._unit_costs[unit] = cost
+        self.journal.append(
+            "node_finished", run=run_id, node=unit, artifact=artifact, cost=cost
+        )
+        return produced
+
+    def _upstream(self, node: Node) -> tuple[str, ...]:
+        """Hashs des artefacts produits par les dependances directes du noeud."""
+        return tuple(
+            hash_ for hash_ in (self._artifacts.get(dep) for dep in node.needs) if hash_
+        )
+
+    def _consumed(self, node: Node, resolved: dict[str, Any]) -> tuple[str, ...]:
+        """Lignee consommee : amont direct + references d'artefacts dans les entrees."""
+        hashes = list(self._upstream(node))
+        for value in resolved.values():
+            hashes.extend(self._embedded(value))
+        return tuple(dict.fromkeys(hashes))
+
+    @staticmethod
+    def _embedded(value: Any) -> list[str]:
+        """Hashs des references {"artifact": ...} portees par une valeur, recursivement."""
+        found: list[str] = []
+        if isinstance(value, dict):
+            artifact = value.get("artifact")
+            if isinstance(artifact, str):
+                found.append(artifact)
+            for nested in value.values():
+                found.extend(Executor._embedded(nested))
+        elif isinstance(value, list):
+            for nested in value:
+                found.extend(Executor._embedded(nested))
+        return found
+
+    def _reference(self, resolved: dict[str, Any]) -> Any:
+        """Charge le premier artefact binaire consomme, comme reference de generation."""
+        for value in resolved.values():
+            for hash_ in self._embedded(value):
+                return self.store.get(hash_)
+        return None
 
     def _resolve_inputs(self, agent: dict, scope: dict[str, Any]) -> dict[str, Any]:
         declared = agent.get("inputs") or {}
@@ -336,9 +466,18 @@ class Executor:
             if node.is_gate:
                 continue
             value = values.get(node_id)
+            agent = self.registry.agent(node.agent_id)
+            if isinstance(value, list):
+                # sortie de foreach : on accumule chaque cle declaree, item par item
+                for item in value:
+                    if not isinstance(item, dict):
+                        continue
+                    for name in (agent.get("outputs") or {}):
+                        if name in item:
+                            outputs.setdefault(name, []).append(item[name])
+                continue
             if not isinstance(value, dict):
                 continue
-            agent = self.registry.agent(node.agent_id)
             for name in (agent.get("outputs") or {}):
                 if name in value:
                     outputs[name] = value[name]

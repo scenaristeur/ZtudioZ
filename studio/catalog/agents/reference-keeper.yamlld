@@ -1,0 +1,18 @@
+"@context": "studio:context"
+"@id": "studio:agent/reference-keeper"
+type: studio:ImageAgent
+name: Gardien des references
+description: Genere la planche de reference visuelle que chaque image devra respecter.
+version: 1
+model: mock-image/png
+prompt: |
+  Tu produis une planche de reference : decor, palette, lumiere.
+  Elle sert d'ancre visuelle a toutes les images generees ensuite.
+inputs:
+  reference:
+    type: string
+    required: true
+outputs:
+  reference:
+    type: object
+budget: 0.50

@@ -1,0 +1,23 @@
+"@context": "studio:context"
+"@id": "studio:agent/shot-list"
+type: studio:LlmAgent
+name: Liste de plans
+description: Decoupe un traitement en plans numerotes, un prompt visuel par plan.
+version: 1
+model: mock/echo
+prompt: |
+  A partir du traitement lineaire, tu decoupes la scene en plans.
+  Chaque plan recoit un numero et un prompt visuel d'une phrase.
+  Tu ne crees aucun personnage et aucun lieu absents du traitement.
+  Tu reponds en JSON avec la cle "shots", liste de {"id", "prompt"}.
+skills:
+  - scenario-structure
+inputs:
+  treatment:
+    type: string
+    required: true
+outputs:
+  shots:
+    type: array
+    schema: catalog/schemas/shots.schema.json
+budget: 0.10

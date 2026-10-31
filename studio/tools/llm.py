@@ -102,19 +102,33 @@ class MockProvider:
         return {"text": prompt[:160]}
 
     @staticmethod
-    def _fake_value(spec: dict) -> Any:
+    def _fake_value(spec: dict, index: int = 0) -> Any:
+        tag = f" #{index + 1}" if index else ""
         t = spec.get("type")
         if t == "string":
-            return "valeur generée par le mock"
+            return f"valeur générée par le mock{tag}"
+        if t == "boolean":
+            return True
+        if t == "integer":
+            return index
+        if t == "number":
+            return float(index)
         if t == "array":
-            return ["élément généré"]
+            # le mockhonore minItems : une liste d'exemple doit rester conforme
+            count = max(1, int(spec.get("minItems", 1) or 1))
+            items = spec.get("items")
+            return [
+                MockProvider._fake_value(items, position) if isinstance(items, dict)
+                else f"élément généré #{position + 1}"
+                for position in range(count)
+            ]
         if t == "object":
             # Si c'est un objet avec un $ref ou properties, generer recursivement.
             if "$ref" in spec:
                 return {}
             props = spec.get("properties", {})
             if props:
-                return {name: MockProvider._fake_value(sub) for name, sub in props.items()}
+                return {name: MockProvider._fake_value(sub, index) for name, sub in props.items()}
             return {}
         return ""
 

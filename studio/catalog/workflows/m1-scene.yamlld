@@ -1,0 +1,31 @@
+"@context": "studio:context"
+"@id": "studio:workflow/m1-scene"
+type: studio:Workflow
+name: Scene M1 - traitement vers images verifiees
+description: Palier M1 - d'un traitement a des plans, des images avec reference et un verdict vision.
+version: 1
+inputs:
+  treatment:
+    type: string
+    required: true
+  reference:
+    type: string
+    required: true
+nodes:
+  - id: shots
+    agent: studio:agent/shot-list
+  - id: ref_image
+    agent: studio:agent/reference-keeper
+  - id: images
+    agent: studio:agent/image-creator
+    needs: [shots, ref_image]
+    foreach: "${shots}"
+    parallel: 3
+  - id: gate_images
+    type: studio:HumanGate
+    needs: [images]
+    question: Les images tiennent-elles le plan et la reference ?
+    options: [continue, retry, stop]
+  - id: verdict
+    agent: studio:agent/continuity-checker
+    needs: [images, gate_images]

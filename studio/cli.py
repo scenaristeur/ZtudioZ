@@ -13,6 +13,7 @@ from .kernel.context import short_iri
 from .kernel.executor import Executor
 from .kernel.journal import Journal
 from .kernel.registry import STUDIO_ROOT, load_registry
+from .tools.images import MockImageProvider, OpenAICompatImageProvider
 from .tools.llm import MockProvider, OpenAICompatProvider
 
 
@@ -26,6 +27,20 @@ def _build_provider(name: str):
             model=os.environ.get("STUDIO_MODEL", "openai/gpt-oss-120b"),
             base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             cost=float(os.environ.get("STUDIO_COST", "0")),
+        )
+    raise SystemExit(f"provider inconnu: {name}")
+
+
+def _build_image_provider(name: str):
+    import os
+
+    if name == "mock":
+        return MockImageProvider(cost=float(os.environ.get("STUDIO_IMAGE_COST", "0")))
+    if name == "openai":
+        return OpenAICompatImageProvider(
+            model=os.environ.get("STUDIO_IMAGE_MODEL", "gpt-image-1"),
+            base_url=os.environ.get("STUDIO_IMAGE_URL", "https://api.openai.com/v1"),
+            cost=float(os.environ.get("STUDIO_IMAGE_COST", "0")),
         )
     raise SystemExit(f"provider inconnu: {name}")
 
@@ -60,12 +75,14 @@ def cmd_run(args) -> int:
         store=ArtifactStore(Path(args.runs) / "artifacts"),
         journal=Journal(Path(args.runs) / "journal.jsonl"),
         answers=answers,
+        image=_build_image_provider(args.provider),
     )
     result = asyncio.run(executor.run(args.workflow, inputs))
 
     print(f"run: {result.run_id}")
     print(f"statut: {result.status}")
     print(f"noeuds termines: {', '.join(sorted(result.completed)) or '-'}")
+    print(f"cout journalise: {executor.journal.state(result.run_id).cost:.4f}")
     if result.pending_gate is not None:
         gate = result.pending_gate
         print(f"gate: {gate.id}")

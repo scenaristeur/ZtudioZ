@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Liste de plans",
+  "description": "Decoupage d'une scene en plans numerotes, un prompt visuel par plan.",
+  "type": "array",
+  "minItems": 3,
+  "items": {
+    "type": "object",
+    "required": ["prompt"],
+    "additionalProperties": false,
+    "properties": {
+      "id": {"type": "integer"},
+      "prompt": {"type": "string", "minLength": 1}
+    }
+  }
+}

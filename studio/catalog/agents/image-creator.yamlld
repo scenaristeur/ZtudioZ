@@ -1,0 +1,21 @@
+"@context": "studio:context"
+"@id": "studio:agent/image-creator"
+type: studio:ImageAgent
+name: Createur d'images
+description: Illustre un plan donne dans la coherence de la planche de reference.
+version: 1
+model: mock-image/png
+prompt: |
+  Tu genere l'image d'un plan a partir de son prompt visuel.
+  Tu respectes la planche de reference : meme decor, meme lumiere, meme palette.
+inputs:
+  item:
+    type: object
+    required: true
+  reference:
+    type: object
+    required: true
+outputs:
+  image:
+    type: object
+budget: 0.50

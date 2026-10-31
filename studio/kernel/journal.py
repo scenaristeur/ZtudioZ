@@ -16,6 +16,7 @@ class RunState:
     completed: set[str] = field(default_factory=set)
     artifacts: dict[str, str] = field(default_factory=dict)
     gate_answers: dict[str, str] = field(default_factory=dict)
+    cost: float = 0.0
     status: str = "running"
 
 
@@ -72,6 +73,9 @@ class Journal:
             if kind in ("node_finished", "node_skipped"):
                 state.completed.add(event["node"])
                 state.artifacts[event["node"]] = event["artifact"]
+            if kind == "node_finished" and "#" not in event.get("node", ""):
+                # le cout des unites de foreach est porte par l'evenement agrege
+                state.cost += float(event.get("cost", 0.0) or 0.0)
             elif kind == "gate_answered":
                 state.gate_answers[event["node"]] = event["answer"]
             elif kind == "run_finished":

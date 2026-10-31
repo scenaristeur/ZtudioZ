@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Verdict vision",
+  "description": "Decision du controleur de continuite sur les images produites.",
+  "type": "object",
+  "required": ["ok", "notes"],
+  "additionalProperties": false,
+  "properties": {
+    "ok": {"type": "boolean"},
+    "notes": {"type": "string"}
+  }
+}
