@@ -1,5 +1,14 @@
 "@context": "studio:context"
 tools:
+  media.clip:
+    kind: python
+    impl: studio.tools.media:clip
+  media.montage:
+    kind: python
+    impl: studio.tools.media:montage
+  media.probe:
+    kind: python
+    impl: studio.tools.media:probe
   vision.describe:
     kind: mcp
     server: character-designer

@@ -4,9 +4,10 @@
 > consultable dans le dépôt principal : `/home/smag/dev/ZtudioZ/REFACTOR_V3.md` (branche
 > `main`). C'est ici que l'on met à jour l'avancement, les décisions et la dette technique.
 >
-> **Statut** : **M0 + M1 réalisés** — noyau complet, artefacts binaires typés et lignés,
-> adaptateur image, verdict vision, gate sur images, invalidation aval, 56 tests verts,
-> démo CLI M1 fonctionnelle (0 appel réseau).
+> **Statut** : **M0 + M1 + M2 réalisés** — noyau complet, artefacts binaires typés et lignés,
+> adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par ffprobe,
+> échec d'item borné, sous-workflows, retry de gate, SIGINT, 80 tests verts, démos CLI
+> M0/M1/M2 fonctionnelles (0 appel réseau en test ; run réel LLM via Albert validé).
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
@@ -128,7 +129,7 @@ dans ces quatre types, c'est le besoin qu'il faut discuter, pas le moteur qu'il 
 
 ---
 
-## 5. Architecture réalisée (M1)
+## 5. Architecture réalisée (M2)
 
 L'arborescence ci-dessous est **l'état réel du dépôt**, pas une intention.
 
@@ -137,22 +138,24 @@ studio/
   kernel/
     context.py     vocabulaire YAML-LD, expansion des IRIs, validation des termes
     registry.py    chargement + validation du catalogue (agents, workflows, tools, skills)
-    graph.py       DAG : needs, foreach, parallel, gates, détection de cycle
-    executor.py    asyncio, sémaphore, budget, cache, gates, reprise, ImageAgent, coûts
+    graph.py       DAG : needs, foreach (+ alias), parallel, gates, sous-workflows, cycles
+    dispatch.py    outils du registre : kind python | cli ; mcp refuse net en M2
+    executor.py    asyncio, sémaphore, budget, cache, gates (+ retry), lignée, coûts
     journal.py     événements append-only (JSONL), reconstruction d'état et de coût
     artifacts.py   stockage adressé par contenu, binaires, lignée, invalidation aval
     errors.py      StudioError, LoadError, GraphError, GateError, BudgetError, SchemaError
   tools/
     llm.py         Provider (protocole) · MockProvider · OpenAICompatProvider
     images.py      ImageProvider (protocole) · MockImageProvider · OpenAICompatImageProvider
+    media.py       outils livrés : clip (lavfi), montage (concat), probe (ffprobe)
   catalog/
-    agents/*.yamlld      déclarations d'agents
-    workflows/*.yamlld   déclarations de graphes
+    agents/*.yamlld      déclarations d'agents (LlmAgent, ImageAgent, ToolAgent)
+    workflows/*.yamlld   déclarations de graphes (m0, m1, m2)
     skills/<id>/SKILL.md packs de connaissance injectés dans les prompts
-    schemas/*.schema.json   contrats de sortie
-    tools.yamlld         registre des capacités (kind: python | mcp)
-  cli.py           run | journal | validate
-tests/             12 fichiers, 56 tests
+    schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
+    tools.yamlld         registre des capacités (kind: python | cli | mcp)
+  cli.py           run | journal | validate | invalidate
+tests/             19 fichiers, 80 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -209,7 +212,7 @@ budget: 0.02
 Base du vocabulaire : `https://ztudioz.dev/ns/studio#`. Termes déclarés : `type` (alias de
 `@type`), `name`, `description`, `version`, `model`, `prompt`, `skills`, `tools`, `inputs`,
 `outputs`, `budget`, `nodes`, `id`, `agent`, `needs`, `foreach`, `parallel`,
-`on_item_failure`, `question`, `options`, `kind`, `server`, `tool`, `impl`.
+`on_item_failure`, `question`, `options`, `as`, `kind`, `server`, `tool`, `impl`.
 
 Un `@context` inline n'est **pas** accepté : il faut la référence au vocabulaire canonique,
 ce qui garantit qu'un seul vocabulaire existe dans le dépôt.
@@ -225,14 +228,31 @@ contrat échoue le nœud, il ne rend pas un résultat approximatif.
 la référence `{"artifact", "media_type", "bytes"}` d'un **binaire** stocké par le store.
 L'exécuteur le branche sur l'adaptateur image (`Executor(image=...)`) et lui applique les
 mêmes garanties : cache par clé de nœud, budget refusé avant appel, coût journalisé.
-C'est un type **provisoire**, assumé comme dette D16 : il sera absorbé par le dispatch
-`ToolAgent` du palier M2, sans changement de format de document.
+C'est un type **provisoire**, consigné en dette D16 : son absorption par le dispatch
+`ToolAgent` (M2) a buté sur un point réel — les impls `python` du registre ne voient pas
+les adaptateurs injectés à l'exécuteur. L'unification est reportée à M3, avec le branchement
+des providers (`providers[]` de `pipeline/config.yaml` v1).
 
 ### 6.3 `ToolAgent`
 
 Même contrat d'entrée/sortie, sans LLM. Chaque outil est un adaptateur mince déclaré dans
-`tools.yaml` : `kind: python | mcp | cli`, avec ses paramètres. Pas de logique métier dans
+`tools.yamlld` : `kind: python | mcp | cli`, avec ses paramètres. Pas de logique métier dans
 l'adaptateur.
+
+Réalité M2 : le dispatch tourne pour `python` et `cli`.
+
+- **python** : `impl: module:function` appelée avec `(params, ctx)` où `ctx` ne donne à voir
+  que le store et le registre. Retour : dict/liste JSON-able ou `Binary` (alors stocké en
+  binaire, référencé, ligné comme une image).
+- **cli** : `command: [argv…]`, substitution `${param}` dans les arguments, stdout capturé →
+  `{"stdout", "exit"}` ; un code retour non nul est un échec d'outil net, journalisé.
+- **mcp** : **refusé à l'exécution**, message explicite — le branchement sur le toolkit v1
+  (`ztudioz_toolkit`, ~25 outils) est une affaire de M3 (dette D19), pas d'à-peu-près.
+
+Un `ToolAgent` déclare **exactement un outil** ; son coût (`cost:` de l'entrée de registre)
+est estimé avant exécution, refusé avant appel si hors budget. La règle d'enveloppe : si la
+valeur rendue porte déjà une clé conforme aux sorties déclarées elle est gardée telle quelle,
+sinon elle est enveloppée sous la première sortie nommée.
 
 ### 6.4 `HumanGate`
 
@@ -242,7 +262,7 @@ Nœud bloquant. Elle journalise `gate_asked`, puis :
 |---|---|
 | `continue` | `gate_answered` + `node_finished` (artefact `{"answer": ...}`), les nœuds aval s'exécutent |
 | `stop` | idem, mais le run s'arrête avec `status="stopped"` ; l'aval n'est **pas** exécuté |
-| `retry` | **non implémenté** : traité comme `blocked`, la repose est redemandée |
+| `retry` | **fait (M2)** : `gate_retry` + `nodes_invalidated` — l'artefact consommé et **tout son aval** sont purgés du cache, la gate est reposée ; les nœuds amont directs se rejouent dans la foulée, leur propre amont reste en cache |
 | absente | `status="blocked"` + `pending_gate` (question + options) ; jamais de saut silencieux |
 
 Le CLI sort alors avec le code 3 et indique comment relancer. Une gate ne se saute jamais :
@@ -286,10 +306,16 @@ Sémantique réalisée :
 |---|---|
 | `needs` | **fait** — niveaux topologiques (Kahn), ordre déterministe (trié dans chaque niveau) |
 | `foreach` | **fait** — expansion en items, portée par un sémaphore propre |
+| `as:` | **fait (M2)** — l'item est aussi injecté sous le nom déclaré (`as: shot`), `item` reste l'alias par défaut |
 | `parallel` | **fait** — borne de concurrence par nœud + sémaphore global d'executor |
-| `on_item_failure` | **parsé, non appliqué** : aujourd'hui la panne d'un item fait échouer le nœud |
-| sous-workflow (`agent: studio:workflow/...`) | **non implémenté** |
+| `on_item_failure: continue` | **fait (M2)** — un item en panne est journalisé (`item_failed`) et retiré du résultat groupé ; le nœud échoue seulement si **tous** les items tombent |
+| sous-workflow (`agent: studio:workflow/...`) | **fait (M2)** — exécuté par un `Executor` enfant, journal propre (`run#node`), gates exposées préfixées (`node/gate`), sorties fusionnées, cache au niveau du nœud parent |
 | un nœud qui ne dépend d'aucune gate voit son exécution ordonnée par nom, la gate étant traitée avant les nœuds du même niveau | **fait** |
+
+Note `foreach` : la liste référencée est cherchée dans la **portée fusionnée** — donc
+`${shots}` (clé de sortie fusionnée) et non `${id_du_noeud.shots}`. L'exemple du §6.5
+pré-M2 (`${storyboard.shots}`) serait refusé : référence non résolue. À aligner dans les
+futurs exemples.
 
 ### 6.6 Registre d'outils
 
@@ -305,9 +331,9 @@ tools:
     tool: describe_sheet
 ```
 
-Réalité M0 : le registre charge et valide les références, `registry.tool(name)` répond, mais
-**aucune exécution d'outil n'est câblée** dans l'agent — aucun agent M0 ne déclare d'outil.
-Le dispatch (`kind: python | mcp | cli`) arrive en M1/M2.
+Réalité M2 : le dispatch est câblé pour `python` et `cli` (§6.3) et trois outils sont livrés
+(`media.clip`, `media.montage`, `media.probe`) ; `vision.describe` reste déclaré et **refusé
+à l'exécution** tant que le dispatch MCP n'est pas branché sur le toolkit v1 — ce sera M3.
 
 ### 6.7 Artefacts
 
@@ -335,8 +361,9 @@ toujours le premier mécanisme à l'œuvre ; `invalidate()` est le mécanisme ac
 
 Journal JSONL append-only. Événements réellement émis :
 
-`run_started` · `node_finished` · `node_skipped` (avec `reason: cache`) · `node_failed` ·
-`gate_asked` · `gate_answered` · `run_finished`
+`run_started` · `node_started` · `node_finished` · `node_skipped` (avec `reason: cache`) ·
+`node_failed` · `item_failed` · `budget_refused` · `gate_asked` · `gate_answered` ·
+`gate_retry` · `nodes_invalidated` · `run_finished`
 
 Chaque événement porte `seq` (croissant, global au fichier), `ts` (UTC ISO) et `run`.
 Depuis M1, chaque `node_finished` porte un champ `cost` (flottant, crédits) : coût unitaire
@@ -345,9 +372,9 @@ par nœud, somme des unités pour les agrégats de `foreach`, `0.0` pour une gat
 dans `RunState.cost`, et le CLI affiche « cout journalise ».
 `run_id = hash(workflow + inputs)` : mêmes entrées ⇒ même run ⇒ reprise.
 
-**Non émis** : `node_started` (pas encore utile), `budget_refused` (surface comme
-`node_failed`). **Non réalisé** : un vrai `replay` reconstruisant les sorties sans relire le
-store — le store le fait déjà.
+**Plus attendu depuis M2** : `node_started` et `budget_refused` sont émis (le refus de budget
+a son événement propre, en plus du `node_failed`). **Non réalisé** : un vrai `replay`
+reconstruisant les sorties sans relire le store — le store le fait déjà (dette D10, reportée).
 
 ### 6.9 Cache et budget
 
@@ -385,7 +412,7 @@ Chaque palier est démontrable et se termine par une validation humaine.
 |---|---|---|---|---|
 | **M0** conversation | noyau complet, 3 agents LLM, 1 gate, 1 workflow, provider mock | YAML-LD validé ; DAG exécuté ; gate bloquante ; reprise après gate ; parallélisme prouvé par test ; **0 appel réseau** | 0 | **réalisé, 29 tests verts** |
 | **M1** scénario + photos | artefacts typés + binaires, adaptateur image, vérif vision, gate sur images, invalidation par lignée | 3 shots + 3 images avec refs ; verdict vision ; coût journalisé ; 2ᵉ run = cache hit ; changement de ref → invalidation aval **uniquement** | tests 0 / run réel sur demande | **réalisé, 56 tests verts** |
-| **M2** assets + montage | `ToolAgent` (ffmpeg), dispatch des outils, `on_item_failure`, sous-workflows, `retry` de gate | `ffprobe` conforme ; montage reproductible ; échec d'un item n'arrête pas le run | 0 | à faire |
+| **M2** assets + montage | `ToolAgent` (ffmpeg), dispatch des outils, `on_item_failure`, sous-workflows, `retry` de gate | `ffprobe` conforme ; montage reproductible ; échec d'un item n'arrête pas le run | 0 | **réalisé, 80 tests verts** |
 | **M3** intégration v1 | **refonte complète** de `pipeline/`, `api/`, `web/` : adaptateurs providers, routes, UI pilotée par le graphe | un projet réel avance d'un palier à l'autre depuis la CLI et depuis le web | selon run | à faire |
 | **M4** production | reprise des acquis : cohérence refs, double-ancre, keyframes, budget, rapports | un plan produit et vérifié par vision, sans régression de cohérence | selon run | à faire |
 
@@ -394,7 +421,8 @@ M0 à M2 sont **autonomes** : ils ne dépendent d'aucun fichier de la v1.
 Écart assumé sur M0 : le critère « `Ctrl-C` + `resume` » a été validé **au niveau du moteur**
 (relancer `run()` avec les mêmes entrées + la réponse de gate reprend aux nœuds restants,
 `test_resume_after_gate_only_runs_remaining_nodes`), pas au niveau du signal `SIGINT` du CLI.
-Le rattrapage du signal est reporté en M2, quand des runs longs existeront vraiment.
+Le rattrapage du signal est reporté en M2, quand des runs longs existeront vraiment — **clos
+en M2** : `Ctrl-C` sort 130, le journal permet de reprendre, test subprocess à l'appui.
 
 ---
 
@@ -426,6 +454,18 @@ et le CLI (`test_providers.py`, `--image-provider`) — **56 verts au total** :
 | `test_lineage.py` | 5 | `parents`/`producer`/`cost`/`media_type` enregistrés, dépendants transitifs, `invalidate` ne purge **que** l'aval, lignée reprise sur disque |
 | `test_images.py` | 7 | ImageAgent écrit un PNG, coût journalisé par nœud et agrégé sur `foreach`, 2ᵉ run = cache, budget refusé à 0 appel, refus clair sans adaptateur, lignée ref → aval |
 | `test_m1_e2e.py` | 7 | 3 shots + 3 images + verdict validé schéma, gate sur images, 2ᵉ run identique sans appel, **changement de ref = réexamen de l'aval seul**, coût total du run, CLI bout en bout |
+
+Tests ajoutés à M2 (rouges d'abord) — **+24 tests, 80 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_tools.py` | 7 | ToolAgent python (clip mp4 ffprobe-conforme), montage concat + probe, dispatch cli, refus net du kind mcp, kind invalide rejeté au chargement, budget d'outil refusé à 0 appel, sortie d'outil validée schéma |
+| `test_item_failure.py` | 3 | `on_item_failure: continue` : item en panne journalisé et retiré, le run aboutit ; sans le flag, l'item tue le nœud |
+| `test_subworkflow.py` | 3 | nœud = workflow interne, 2ᵉ run = cache, gate interne bloque avec id préfixé `node/gate` |
+| `test_gate_retry.py` | 2 | `retry` = purge amont direct + `nodes_invalidated` + repose ; l'aïeul en cache n'est pas repayé |
+| `test_events.py` | 3 | `node_started` émis, `budget_refused` émis avec 0 appel, `as:` nomme l'item du foreach |
+| `test_m2_e2e.py` | 4 | catalogue livré : gate montage, mp4 sur disque (3 clips + 1), probe conforme, 2ᵉ run sans production, item maudit n'arrête pas le run |
+| `test_cli_ops.py` | 2 | **SIGINT → code 130, relance reprend** ; `studio invalidate <hash>` purgne l'aval |
 
 ---
 
@@ -488,7 +528,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 56 passed
+.venv/bin/python -m pytest tests/      # 80 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -529,40 +569,51 @@ condition de :
 | 2026-10-31 | M1 | Démo validée : `m1-scene` bloque à la gate (exit 3), reprend avec `--answer`, 2ᵉ run identique sans production, changement de ref = réexamen de l'aval seul (`shots` en cache) | assistant |
 | 2026-10-31 | M1 | **Run réel Albert (etalab)** sur demande : M0 complet (brief + traitement conformes aux schémas) et M1 (5 shots réels). Découverte : le verdict du `continuity-checker` réel est `ok=false` parce qu'il ne reçoit que des **références JSON**, pas les plans ni les pixels — la vérification vision multimodale reste à brancher (M4) | assistant + albert |
 | 2026-10-31 | M1 | Deux garde-fous ajoutés pour le run réel : `--image-provider` distinct du provider LLM (mock image quand le provider texte n'a pas d'endpoint images) et `_resolve_model` (un agent qui déclare `model: mock/echo` cède la place au modèle de l'opérateur ; un modèle réel déclaré est respecté) | assistant |
+| 2026-10-31 | M2 | 24 tests écrits rouges d'abord, implémentation, 80 verts : dispatch d'outils (python + cli, mcp refusé net), `ToolAgent`, `on_item_failure`, sous-workflows, `retry` de gate, `node_started`/`budget_refused`, SIGINT (code 130), `studio invalidate`, `as:` | assistant |
+| 2026-10-31 | M2 | **Retry de gate = invalidation par lignée** : la réponse `retry` purge l'artefact consommé et tout son aval (`nodes_invalidated` dans le journal, append-only respecté), rejoue l'amont direct, repose la question. Un montage régénéré identique (bitexact) se déduplique tout seul sur le disque | assistant |
+| 2026-10-31 | M2 | **Sous-workflow par `Executor` enfant** : même store/journal, sous-run `run#node`, gates exposées préfixées (`render/gate_x`) ; le cache du nœud parent évite de rejouer l'intier | assistant |
+| 2026-10-31 | M2 | D16 **reportée en M3** (honnêteté) : l'absorption d'`ImageAgent` par le dispatch exige que les impls du registre voient les adaptateurs providers — branchement M3 (`config.yaml` v1 `providers[]`) | assistant |
+| 2026-10-31 | M2 | Démo validée en attente humaine : `m2-montage` bloque à la gate, retry, `continue` → probe `{duration: 1.2, codec: h264}` sur 4 mp4 (3 clips + 1 montage) | assistant |
 
 ---
 
 ## 12. Dette technique — ce qui est déclaré mais non réalisé
 
 Liste volontairement exhaustive : c'est le carnet de charges du palier suivant, et ce qui
-empêche de croire que le noyau est fini. D1–D3 sont clos en M1, D16–D18 ouverts en M1.
+empêche de croire que le noyau est fini. D1–D3 clos en M1 ; D4–D9, D13, D17, D18 clos en M2 ;
+D19–D21 ouvertes en M2 ; restent ouverts D10–D12, D14–D16, D19–D21.
 
 | # | Écart | Onde le voir | À traiter |
 |---|---|---|---|
 | ~~D1~~ | ~~Artefacts JSON uniquement~~ | **clos en M1** : `Binary` + `<hash>.<ext>`, empreinte sur les octets bruts | — |
 | ~~D2~~ | ~~Pas de lignée~~ | **clos en M1** : `lineage.json`, `Artifact(hash, value, media_type, parents, producer, cost)` | — |
 | ~~D3~~ | ~~Pas d'invalidation aval~~ | **clos en M1** : `dependents()` + `invalidate()`, testés ; l'invalidation passive par clé de cache reste le chemin principal | — |
-| D4 | **`on_item_failure: continue` parsé mais ignoré** : un item en panne fait échouer le nœud | `Node.on_item_failure` jamais lu dans `executor.py` | M2 |
-| D5 | **Sous-workflows non implémentés** : `agent: studio:workflow/...` est rejeté comme agent inconnu | `graph.build_graph` | M2 |
-| D6 | **`ToolAgent` inexistant** : seules les primitives LLM, ImageAgent et HumanGate tournent | `executor._exec_node` n'a que deux branches | M2 |
-| D7 | **Dispatch d'outils non câblé** : le registre charge et valide, `registry.tool()` répond, mais aucun agent n'appelle d'outil | `catalog/tools.yamlld` + `registry.tool` | M2 |
-| D8 | **`retry` d'une gate = repose** (retourne `blocked`), pas de rejoué de l'amont | `executor._exec_gate` | M2 |
-| D9 | **`node_started` et `budget_refused` non émis** ; le refus de budget apparaît comme `node_failed` | `executor.py` | M2 |
-| D10 | **`replay`** : `Journal.state()` reconstruit l'état, mais il n'existe pas de reconstruction des sorties sans relire le store | `journal.py` | M2 |
-| D11 | **Budget = coût fixe par appel** (`provider.estimate()`), pas de coût réel token/image | `tools/llm.py::estimate`, `tools/images.py::estimate` | M3 |
+| ~~D4~~ | ~~`on_item_failure` parsé mais ignoré~~ | **clos en M2** : items en panne journalisés (`item_failed`) et retirés du groupé ; le nœud ne tombe que si tout tombe | — |
+| ~~D5~~ | ~~Sous-workflows non implémentés~~ | **clos en M2** : `Executor` enfant, sous-journal `run#node`, gates préfixées, cache du nœud parent | — |
+| ~~D6~~ | ~~`ToolAgent` inexistant~~ | **clos en M2** : troisième branche de l'exécuteur, un outil par agent, contrat d'entrées/sorties partagé | — |
+| ~~D7~~ | ~~Dispatch d'outils non câblé~~ | **clos en M2** pour `python` et `cli` ; `mcp` refusé net → D19 | — |
+| ~~D8~~ | ~~`retry` de gate = repose~~ | **clos en M2** : purge l'amont direct et son aval (`nodes_invalidated`), rejoue l'amont, repose la question | — |
+| ~~D9~~ | ~~`node_started`/`budget_refused` non émis~~ | **clos en M2** : les deux sont journalisés | — |
+| D10 | **`replay`** : `Journal.state()` reconstruit l'état, pas les sorties sans relire le store | `journal.py` | M3 (le store le fait déjà ; reporté sans dette de garantie) |
+| D11 | **Budget = coût fixe par appel** (`provider.estimate()`, `cost` de l'entrée d'outil), pas de coût réel token/image | `tools/llm.py`, `tools/images.py`, `tools.yamlld` | M3 |
 | D12 | **Un seul agent par nœud** : pas de fan-out multi-agent ni de vote/consensus entre agents | `graph.Node` | M3 |
-| D13 | **`SIGINT` non rattrapé** dans le CLI : la reprise est vérifiée au niveau moteur, pas au signal | `cli.py` | M2 |
+| ~~D13~~ | ~~`SIGINT` non rattrapé dans le CLI~~ | **clos en M2** : code 130, message de reprise, journal intact — reprise prouvée par test subprocess | — |
 | D14 | **Premier run réel exercé le 2026-10-31** : `OpenAICompatProvider` validé contre Albert (etalab, `openai/gpt-oss-120b`) sur M0 complet et M1 (5 shots réels, verdict honnête). `OpenAICompatImageProvider` reste **non exercé** : Albert n'expose pas d'endpoint de génération d'images | `tools/llm.py` (clos), `tools/images.py` (reste) | M3/M4 quand un provider images réel sera branché |
 | D15 | Les **11 skills v1 ne sont pas encore joignables** : seuls les packs de `catalog/skills/` le sont | `load_registry(extra_skill_roots=...)` | M3 |
-| D16 | **`ImageAgent` est un type provisoire** : il préempte la branche `ToolAgent` de M2 et ne passe pas par le dispatch `kind: python \| mcp \| cli` | `executor._exec_image` | M2 : absorbé |
-| D17 | **`invalidate()` n'est pas exposé** : la purge active par lignée est dans le store et les tests, pas dans le CLI (`studio invalidate <hash>`) | `kernel/artifacts.py`, `cli.py` | M2 |
-| D18 | **`foreach` nomme ses items `item`** : un agent en boucle doit déclarer une entrée `item` ; pas d'aliasage (`as: shot`) | `executor._exec_node` / `_scope` | M2 |
+| D16 | **`ImageAgent` n'est pas encore absorbé par le dispatch** : les impls `python` du registre ne voient pas les adaptateurs injectés à l'exécuteur (`image=`) ; l'unification attend le branchement providers du M3 (`config.yaml` v1 `providers[]`) | `executor._exec_image`, `dispatch.run_tool` | M3 |
+| ~~D17~~ | ~~`invalidate()` non exposé~~ | **clos en M2** : `studio invalidate <hash>` | — |
+| ~~D18~~ | ~~`foreach` impose le nom `item`~~ | **clos en M2** : `as: shot` injecte l'item sous le nom déclaré (`item` reste disponible) | — |
+| D19 | **Dispatch `kind: mcp` refusé à l'exécution** : le toolkit v1 (~25 outils, camel `MCPServer`) n'est pas branché ; `vision.describe` reste une déclaration morte en exécution | `dispatch.run_tool` (branche mcp) | M3 — exposition du toolkit, pas duplication |
+| D20 | **Un seul outil par `ToolAgent`** : la convention « exactement un outil déclaré » évite le routage multi-outils ; un agent qui compose deux outils n'existe pas | `executor._exec_tool` | M3 si le besoin apparaît |
+| D21 | **Déterminisme des media réels** : les clips synthétiques sont `bitexact` (retry = déduplication parfaite), un mp4 de caméra réelle ne l'est pas — la déduplication par contenu n'y suffira pas | `tools/media.py` | M4 |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles
 réellement concurrents, borne `parallel`, gate bloquante qui ne se saute pas, refus de budget
-avant appel, cache au deuxième run, journal append-only et état reconstruit ; depuis M1 :
-binaires adressés par contenu, lignée et invalidation aval, coûts journalisés, gate sur images.
+avant appel, cache au deuxième run, journal append-only et état reconstruit ; M1 : binaires
+adressés par contenu, lignée et invalidation aval, coûts journalisés, gate sur images ; M2 :
+dispatch d'outils python/cli, `ToolAgent`, items en panne bornés, sous-workflows, retry de
+gate, SIGINT relançable, purge active au CLI, alias `as:`.
 
 ---
 

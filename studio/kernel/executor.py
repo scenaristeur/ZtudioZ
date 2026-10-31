@@ -9,7 +9,9 @@ from typing import Any
 
 import jsonschema
 
-from .artifacts import ArtifactStore, canonical
+from .artifacts import ArtifactStore, Binary, canonical
+from .context import expand_list
+from .dispatch import ToolContext, run_tool
 from .errors import BudgetError, GateError, LoadError, SchemaError
 from .graph import Graph, Node
 from .journal import Journal
@@ -23,6 +25,18 @@ class GateRequest:
     id: str
     question: str
     options: tuple[str, ...] = ()
+
+
+class _GateBlocked(Exception):
+    """Signal interne : un sous-workflow reclame une reponse humaine."""
+
+    def __init__(self, gate: GateRequest):
+        super().__init__(f"gate attendue: {gate.id}")
+        self.gate = gate
+
+
+class _RunStopped(Exception):
+    """Signal interne : un sous-workflow a recu 'stop'."""
 
 
 @dataclass
@@ -67,6 +81,8 @@ class Executor:
         self._global = asyncio.Semaphore(max_parallel)
         self._artifacts: dict[str, str] = {}
         self._unit_costs: dict[str, float] = {}
+        self._tools = ToolContext(store=store, registry=registry)
+        self._merged: dict[str, str] = {}
 
     async def run(
         self,
@@ -85,15 +101,20 @@ class Executor:
         # des runs precedents : ils peuvent avoir ete generes avec d'autres inputs).
         state = self.journal.state(run_id)
         merged = {**state.gate_answers, **self.answers, **dict(answers or {})}
+        self._merged = merged
         completed = set(state.completed)
         self._artifacts = dict(state.artifacts)
         self._unit_costs = {}
         values: dict[str, Any] = {}
         for event in self.journal.events():
-            if event.get("run") != run_id or event.get("type") not in (
-                "node_finished",
-                "node_skipped",
-            ):
+            if event.get("run") != run_id:
+                continue
+            kind = event.get("type")
+            if kind == "nodes_invalidated":
+                for node_id in event.get("nodes", []):
+                    values.pop(node_id, None)
+                continue
+            if kind not in ("node_finished", "node_skipped"):
                 continue
             node_id = event["node"]
             if "#" in node_id:
@@ -112,6 +133,12 @@ class Executor:
                 ]
                 for gate in gates:
                     verdict = self._exec_gate(gate, run_id, merged)
+                    if verdict == "retry":
+                        await self._retry_gate(gate, graph, inputs, values, completed, run_id)
+                        self.journal.append("run_finished", run=run_id, status="blocked")
+                        result = self._result("blocked", run_id, graph, values, completed)
+                        result.pending_gate = GateRequest(gate.id, gate.question or "", gate.options)
+                        return result
                     if verdict != "continue":
                         status = "blocked" if verdict == "blocked" else "stopped"
                         self.journal.append("run_finished", run=run_id, status=status)
@@ -135,6 +162,14 @@ class Executor:
                 )
                 failure: Exception | None = None
                 for node, outcome in zip(pending, outcomes):
+                    if isinstance(outcome, _GateBlocked):
+                        self.journal.append("run_finished", run=run_id, status="blocked")
+                        result = self._result("blocked", run_id, graph, values, completed)
+                        result.pending_gate = outcome.gate
+                        return result
+                    if isinstance(outcome, _RunStopped):
+                        self.journal.append("run_finished", run=run_id, status="stopped")
+                        return self._result("stopped", run_id, graph, values, completed)
                     if isinstance(outcome, BaseException):
                         failure = failure or outcome
                         self.journal.append(
@@ -171,7 +206,8 @@ class Executor:
         if answer is None:
             return "blocked"
         if answer == "retry":
-            return "blocked"
+            self.journal.append("gate_retry", run=run_id, node=node.id)
+            return "retry"
         if node.options and answer not in node.options:
             raise GateError(f"reponse invalide pour {node.id}: {answer}")
 
@@ -185,9 +221,46 @@ class Executor:
         )
         return "stopped" if answer == "stop" else "continue"
 
+    async def _retry_gate(
+        self,
+        gate: Node,
+        graph: Graph,
+        inputs: dict[str, Any],
+        values: dict[str, Any],
+        completed: set[str],
+        run_id: str,
+    ) -> None:
+        """D8 : retry = purge de l'artefact consomme et de son aval, puis rejoue l'amont."""
+        targets: set[str] = set()
+        for dep in gate.needs:
+            hash_ = self._artifacts.get(dep)
+            if hash_:
+                targets |= self.store.invalidate(hash_)
+        affected = [nid for nid, hash_ in self._artifacts.items() if hash_ in targets]
+        self.journal.append(
+            "nodes_invalidated",
+            run=run_id,
+            gate=gate.id,
+            nodes=sorted(affected),
+            artifacts=sorted(targets),
+        )
+        for node_id in affected:
+            completed.discard(node_id)
+            values.pop(node_id, None)
+            self._artifacts.pop(node_id, None)
+        for node_id in graph.order:
+            if node_id not in affected or graph.node(node_id).is_gate:
+                continue
+            outcome = await self._exec_node(graph.node(node_id), inputs, values, run_id)
+            values[node_id] = outcome
+            completed.add(node_id)
+
     async def _exec_node(
         self, node: Node, inputs: dict[str, Any], values: dict[str, Any], run_id: str
     ) -> Any:
+        if node.workflow_id:
+            return await self._exec_subworkflow(node, inputs, values, run_id)
+
         agent = self.registry.agent(node.agent_id)
         if node.foreach:
             items = self._resolve(node.foreach, self._scope(node, inputs, values))
@@ -197,11 +270,38 @@ class Executor:
 
             async def one(index: int, item: Any) -> Any:
                 async with semaphore:
-                    scope = self._scope(node, inputs, values, {"item": item, "index": index})
+                    extra = {"item": item, "index": index}
+                    if node.alias:
+                        extra[node.alias] = item
+                    scope = self._scope(node, inputs, values, extra)
                     return await self._exec_agent(node, agent, scope, run_id, f"{node.id}#{index}")
 
-            outcomes = await asyncio.gather(*[one(i, item) for i, item in enumerate(items)])
-            units = tuple(f"{node.id}#{index}" for index in range(len(items)))
+            tasks = [one(i, item) for i, item in enumerate(items)]
+            if node.on_item_failure == "continue":
+                outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+                kept: list[Any] = []
+                first_error: BaseException | None = None
+                for index, outcome in enumerate(outcomes):
+                    if isinstance(outcome, (_GateBlocked, _RunStopped)):
+                        raise outcome
+                    if isinstance(outcome, BaseException):
+                        first_error = first_error or outcome
+                        self.journal.append(
+                            "item_failed",
+                            run=run_id,
+                            node=f"{node.id}#{index}",
+                            error=str(outcome),
+                        )
+                    else:
+                        kept.append(outcome)
+                if not kept:
+                    raise first_error or RuntimeError(f"noeud {node.id}: tous les items ont echoue")
+                outcomes = kept
+            else:
+                outcomes = await asyncio.gather(*tasks)
+            units = tuple(
+                f"{node.id}#{index}" for index in range(len(items))
+            )
             total = sum(self._unit_costs.get(unit, 0.0) for unit in units)
             artifact = self.store.put(
                 outcomes,
@@ -246,6 +346,8 @@ class Executor:
     ) -> Any:
         if str(agent.get("@type", "")).endswith("ImageAgent"):
             return await self._exec_image(node, agent, scope, run_id, unit)
+        if str(agent.get("@type", "")).endswith("ToolAgent"):
+            return await self._exec_tool(node, agent, scope, run_id, unit)
 
         resolved = self._resolve_inputs(agent, scope)
         cache_key = self.store.key(
@@ -263,10 +365,14 @@ class Executor:
         budget = agent.get("budget")
         cost = float(self.provider.estimate())
         if budget is not None and cost > float(budget):
+            self.journal.append(
+                "budget_refused", run=run_id, node=unit, cost=cost, budget=float(budget)
+            )
             raise BudgetError(
                 f"budget depasse pour {node.id}: cout estime {cost} > budget {budget}"
             )
 
+        self.journal.append("node_started", run=run_id, node=unit)
         async with self._global:
             produced = await self.provider.complete(
                 agent_id=agent["@id"],
@@ -320,11 +426,15 @@ class Executor:
         budget = agent.get("budget")
         cost = float(self.image.estimate())
         if budget is not None and cost > float(budget):
+            self.journal.append(
+                "budget_refused", run=run_id, node=unit, cost=cost, budget=float(budget)
+            )
             raise BudgetError(
                 f"budget depasse pour {node.id}: cout estime {cost} > budget {budget}"
             )
 
         reference = self._reference(resolved)
+        self.journal.append("node_started", run=run_id, node=unit)
         async with self._global:
             binary = await self.image.generate(
                 agent_id=agent["@id"],
@@ -352,6 +462,161 @@ class Executor:
             "node_finished", run=run_id, node=unit, artifact=artifact, cost=cost
         )
         return produced
+
+    async def _exec_tool(
+        self, node: Node, agent: dict, scope: dict[str, Any], run_id: str, unit: str
+    ) -> Any:
+        """ToolAgent : le contrat d'un agent, l'impl d'un outil du registre."""
+        names = expand_list(agent.get("tools"))
+        if len(names) != 1:
+            raise LoadError(
+                f"noeud {node.id}: un ToolAgent declare exactement un outil, recu: {names}"
+            )
+        tool_name = names[0]
+        entry = self.registry.tool(tool_name)
+        kind = entry.get("kind")
+        if kind == "mcp":
+            raise LoadError(
+                f"noeud {node.id}: l'outil {tool_name} (kind: mcp) attend le dispatch MCP de M3"
+            )
+        if kind not in ("python", "cli"):
+            raise LoadError(f"noeud {node.id}: outil {tool_name}: kind invalide: {kind!r}")
+
+        resolved = self._resolve_inputs(agent, scope)
+        cache_key = self.store.key(
+            [node.id, agent["@id"], agent.get("version", 1), "tool", tool_name,
+             entry.get("impl") or entry.get("command"), resolved, scope.get("item")]
+        )
+        cached = self.store.cached(cache_key)
+        if cached is not None:
+            self._unit_costs[unit] = 0.0
+            self.journal.append(
+                "node_skipped", run=run_id, node=unit, artifact=cached, reason="cache", cost=0.0
+            )
+            return self.store.get(cached)
+
+        cost = float(entry.get("cost", 0.0))
+        budget = agent.get("budget")
+        if budget is not None and cost > float(budget):
+            self.journal.append(
+                "budget_refused", run=run_id, node=unit, cost=cost, budget=float(budget)
+            )
+            raise BudgetError(
+                f"budget depasse pour {node.id}: cout estime {cost} > budget {budget}"
+            )
+
+        self.journal.append("node_started", run=run_id, node=unit)
+        async with self._global:
+            value = await run_tool(tool_name, entry, resolved, self._tools)
+
+        name = self._output_key(agent)
+        if isinstance(value, Binary):
+            consumed = self._consumed(node, resolved)
+            binary_key = self.store.put(
+                value, parents=consumed, producer=agent["@id"], cost=cost
+            )
+            produced = {name or "binary": value.ref()}
+            self._validate_outputs(node, agent, produced)
+            artifact = self.store.put(
+                produced,
+                parents=(binary_key, *consumed),
+                producer=agent["@id"],
+                cost=cost,
+            )
+        else:
+            declared = list((agent.get("outputs") or {}).keys())
+            if isinstance(value, dict) and any(key in value for key in declared):
+                produced = value  # l'outil rend deja des cles conformes au contrat
+            else:
+                produced = {name or "result": value}
+            self._validate_outputs(node, agent, produced)
+            artifact = self.store.put(
+                produced,
+                parents=self._consumed(node, resolved),
+                producer=agent["@id"],
+                cost=cost,
+            )
+        self.store.remember(cache_key, artifact)
+        self._artifacts[unit] = artifact
+        self._unit_costs[unit] = cost
+        self.journal.append(
+            "node_finished", run=run_id, node=unit, artifact=artifact, cost=cost
+        )
+        return produced
+
+    async def _exec_subworkflow(
+        self, node: Node, inputs: dict[str, Any], values: dict[str, Any], run_id: str
+    ) -> Any:
+        """D5 : un noeud peut executer un workflow entier, avec son journal propre."""
+        inner = self.registry.workflow(node.workflow_id)
+        scope = self._scope(node, inputs, values)
+        resolved: dict[str, Any] = {}
+        for name, spec in (inner.get("inputs") or {}).items():
+            if name in scope:
+                resolved[name] = scope[name]
+            elif isinstance(spec, dict) and spec.get("required"):
+                raise LoadError(
+                    f"input requis manquant pour le sous-workflow {node.id}: {name}"
+                )
+
+        cache_key = self.store.key(
+            [node.id, inner["@id"], inner.get("version", 1), "workflow", resolved,
+             scope.get("item")]
+        )
+        cached = self.store.cached(cache_key)
+        if cached is not None:
+            self._unit_costs[node.id] = 0.0
+            self.journal.append(
+                "node_skipped", run=run_id, node=node.id, artifact=cached, reason="cache", cost=0.0
+            )
+            return self.store.get(cached)
+
+        self.journal.append(
+            "node_started", run=run_id, node=node.id, workflow=inner["@id"]
+        )
+        prefix = f"{node.id}/"
+        inner_answers = {
+            key[len(prefix):]: answer
+            for key, answer in self._merged.items()
+            if key.startswith(prefix)
+        }
+        child = Executor(
+            self.registry,
+            self.provider,
+            self.store,
+            self.journal,
+            answers=inner_answers,
+            max_parallel=self.max_parallel,
+            image=self.image,
+        )
+        sub_run = f"{run_id}#{node.id}"
+        result = await child.run(node.workflow_id, resolved, run_id=sub_run)
+
+        if result.status == "blocked" and result.pending_gate is not None:
+            gate = result.pending_gate
+            raise _GateBlocked(
+                GateRequest(f"{node.id}/{gate.id}", gate.question, gate.options)
+            )
+        if result.status == "stopped":
+            raise _RunStopped(f"sous-workflow {node.id}: arrete par l'humain")
+        if result.status != "completed":
+            raise RuntimeError(f"sous-workflow {node.id} en echec: {result.error}")
+
+        outputs = dict(result.outputs)
+        cost = child.journal.state(sub_run).cost
+        artifact = self.store.put(
+            outputs,
+            parents=self._consumed(node, resolved),
+            producer=inner["@id"],
+            cost=cost,
+        )
+        self.store.remember(cache_key, artifact)
+        self._artifacts[node.id] = artifact
+        self._unit_costs[node.id] = cost
+        self.journal.append(
+            "node_finished", run=run_id, node=node.id, artifact=artifact, cost=cost
+        )
+        return outputs
 
     def _upstream(self, node: Node) -> tuple[str, ...]:
         """Hashs des artefacts produits par les dependances directes du noeud."""
@@ -466,6 +731,11 @@ class Executor:
             if node.is_gate:
                 continue
             value = values.get(node_id)
+            if node.agent_id is None:
+                # sous-workflow : la valeur est deja le dictionnaire des sorties
+                if isinstance(value, dict):
+                    outputs.update(value)
+                continue
             agent = self.registry.agent(node.agent_id)
             if isinstance(value, list):
                 # sortie de foreach : on accumule chaque cle declaree, item par item

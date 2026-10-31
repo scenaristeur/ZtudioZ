@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sonde ffprobe",
+  "type": "object",
+  "required": ["duration", "codec"],
+  "properties": {
+    "duration": {"type": "number", "minimum": 0},
+    "codec": {"type": "string", "minLength": 1},
+    "streams": {"type": "integer"}
+  }
+}

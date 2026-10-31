@@ -1,0 +1,16 @@
+"@context": "studio:context"
+"@id": "studio:agent/clip-maker"
+type: studio:ToolAgent
+name: Fabricant de clips
+description: Produit un clip synthetique (couleur pure, h264) a partir d'une fiche plan.
+version: 1
+tools:
+  - media.clip
+inputs:
+  item:
+    type: object
+    required: true
+outputs:
+  clip:
+    type: object
+budget: 0.50

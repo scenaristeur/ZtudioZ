@@ -18,11 +18,14 @@ from .tools.llm import MockProvider, OpenAICompatProvider
 
 
 def _build_provider(name: str):
-    if name == "mock":
-        return MockProvider()
-    if name == "openai":
-        import os
+    import os
 
+    if name == "mock":
+        return MockProvider(
+            delay=float(os.environ.get("STUDIO_MOCK_DELAY", "0")),
+            cost=float(os.environ.get("STUDIO_COST", "0")),
+        )
+    if name == "openai":
         return OpenAICompatProvider(
             model=os.environ.get("STUDIO_MODEL", "openai/gpt-oss-120b"),
             base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
@@ -77,7 +80,12 @@ def cmd_run(args) -> int:
         answers=answers,
         image=_build_image_provider(args.image_provider or args.provider),
     )
-    result = asyncio.run(executor.run(args.workflow, inputs))
+    try:
+        result = asyncio.run(executor.run(args.workflow, inputs))
+    except KeyboardInterrupt:
+        # D13 : l'interruption ne casse rien — le journal append-only permet de reprendre
+        print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
+        return 130
 
     print(f"run: {result.run_id}")
     print(f"statut: {result.status}")
@@ -94,6 +102,20 @@ def cmd_run(args) -> int:
         print(f"erreur: {result.error}", file=sys.stderr)
         return 1
     print(json.dumps(result.outputs, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_invalidate(args) -> int:
+    """D17 : purge active par lignee — l'amont est preserve, l'aval se rejouera."""
+    store = ArtifactStore(Path(args.runs) / "artifacts")
+    try:
+        purged = store.invalidate(args.hash)
+    except Exception as exc:
+        print(f"INVALIDE: {exc}", file=sys.stderr)
+        return 1
+    print(f"cache purge : {len(purged)} artefacts devalues (dont {args.hash[:8]})")
+    for hash_ in sorted(purged):
+        print(f"  {hash_}")
     return 0
 
 
@@ -122,6 +144,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     journal = sub.add_parser("journal", help="affiche le journal")
     journal.set_defaults(func=cmd_journal)
+
+    invalidate = sub.add_parser("invalidate", help="purge le cache d'un artefact et de son aval")
+    invalidate.add_argument("hash")
+    invalidate.set_defaults(func=cmd_invalidate)
     return parser
 
 

@@ -1,0 +1,16 @@
+"@context": "studio:context"
+"@id": "studio:agent/mounter"
+type: studio:ToolAgent
+name: Monteur
+description: Concatene les clips dans l'ordre de la liste de plans.
+version: 1
+tools:
+  - media.montage
+inputs:
+  clips:
+    type: array
+    required: true
+outputs:
+  montage:
+    type: object
+budget: 0.50

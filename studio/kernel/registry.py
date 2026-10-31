@@ -125,6 +125,10 @@ def _load_tools(catalog: Path) -> dict[str, dict]:
     tools = doc.get("tools") or {}
     if not isinstance(tools, dict):
         raise LoadError(f"{path}: 'tools' doit etre un mapping")
+    for name, entry in tools.items():
+        kind = (entry or {}).get("kind") if isinstance(entry, dict) else None
+        if kind is not None and kind not in {"python", "cli", "mcp"}:
+            raise LoadError(f"outil {name}: kind invalide: {kind!r} (attendu python | cli | mcp)")
     return tools
 
 

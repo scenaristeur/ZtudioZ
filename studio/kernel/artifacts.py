@@ -122,15 +122,23 @@ class ArtifactStore:
 
     def get(self, key: str) -> Any:
         """Relit un artefact par son hash : dict JSON ou Binary, selon son media."""
+        path = self.path_for(key)
+        if path.suffix == ".json":
+            return json.loads(path.read_text(encoding="utf-8"))
+        media = self._lineage.get(key, {}).get("media_type", "application/octet-stream")
+        return Binary(path.read_bytes(), media)
+
+    def path_for(self, key: str) -> Path:
+        """Le chemin du fichier de contenu (JSON ou binaire) d'un artefact."""
         json_path = self.root / f"{key}.json"
         if json_path.exists():
-            return json.loads(json_path.read_text(encoding="utf-8"))
+            return json_path
         entry = self._lineage.get(key, {})
         ext = MEDIA_EXTENSIONS.get(entry.get("media_type", ""), ".bin")
         raw_path = self.root / f"{key}{ext}"
         if raw_path.exists():
-            return Binary(raw_path.read_bytes(), entry.get("media_type", "application/octet-stream"))
-        raise KeyError(f"artefact inconnu: {key}")
+            return raw_path
+        raise KeyError(f"artefact introuvable: {key}")
 
     def lineage(self, key: str) -> Artifact:
         """Retourne l'artefact typ complet : valeur, media, parents, producteur, cout."""

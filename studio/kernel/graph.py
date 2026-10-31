@@ -26,6 +26,7 @@ NODE_KEYS = {
     "budget",
     "name",
     "description",
+    "as",
 }
 
 
@@ -42,6 +43,8 @@ class Node:
     is_gate: bool = False
     question: str | None = None
     options: tuple[str, ...] = ()
+    alias: str = ""
+    workflow_id: str | None = None
     raw: dict = field(default_factory=dict, compare=False)
 
 
@@ -101,15 +104,19 @@ def build_graph(workflow: dict, registry: "Registry") -> Graph:
 
         is_gate = str(raw.get("type", "")).endswith("HumanGate")
         agent_id = None
+        workflow_id = None
         if not is_gate:
             ref = raw.get("agent")
             if not ref:
                 raise LoadError(f"noeud {node_id}: 'agent' est requis")
-            agent_id = ref if ref.startswith("http") else ref
-            resolved = registry.resolve(agent_id)
-            if resolved not in registry.agents:
-                raise GraphError(f"noeud {node_id}: agent inconnu: {ref}")
-            agent_id = resolved
+            resolved = registry.resolve(ref)
+            if resolved in registry.workflows:
+                # D5 : un noeud peut executer un sous-workflow comme un agent
+                workflow_id = resolved
+            else:
+                if resolved not in registry.agents:
+                    raise GraphError(f"noeud {node_id}: agent inconnu: {ref}")
+                agent_id = resolved
 
         nodes.append(
             Node(
@@ -122,6 +129,8 @@ def build_graph(workflow: dict, registry: "Registry") -> Graph:
                 is_gate=is_gate,
                 question=raw.get("question"),
                 options=tuple(expand_list(raw.get("options"))),
+                alias=str(raw.get("as") or ""),
+                workflow_id=workflow_id,
                 raw=raw,
             )
         )

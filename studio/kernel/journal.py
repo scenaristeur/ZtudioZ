@@ -76,6 +76,13 @@ class Journal:
             if kind == "node_finished" and "#" not in event.get("node", ""):
                 # le cout des unites de foreach est porte par l'evenement agrege
                 state.cost += float(event.get("cost", 0.0) or 0.0)
+            elif kind == "nodes_invalidated":
+                # une gate qui demande retry retire l'amont rejoue ; le journal
+                # reste append-only, seule la reconstruction d'etat change
+                for node_id in event.get("nodes", []):
+                    state.completed.discard(node_id)
+                    state.artifacts.pop(node_id, None)
+                    state.gate_answers.pop(node_id, None)
             elif kind == "gate_answered":
                 state.gate_answers[event["node"]] = event["answer"]
             elif kind == "run_finished":

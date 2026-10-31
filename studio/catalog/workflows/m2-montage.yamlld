@@ -1,0 +1,27 @@
+"@context": "studio:context"
+"@id": "studio:workflow/m2-montage"
+type: studio:Workflow
+name: Montage M2 - clips, gate, sonde
+description: Palier M2 - de fiches de plans a un montage mp4 verifie par ffprobe.
+version: 1
+inputs:
+  clips:
+    type: list
+    required: true
+nodes:
+  - id: clips
+    agent: studio:agent/clip-maker
+    foreach: "${clips}"
+    parallel: 3
+    on_item_failure: continue
+  - id: board
+    agent: studio:agent/mounter
+    needs: [clips]
+  - id: gate_montage
+    type: studio:HumanGate
+    needs: [board]
+    question: Le montage est-il conforme au decoupage ?
+    options: [continue, retry, stop]
+  - id: probe
+    agent: studio:agent/prober
+    needs: [board, gate_montage]

@@ -1,0 +1,17 @@
+"@context": "studio:context"
+"@id": "studio:agent/prober"
+type: studio:ToolAgent
+name: Sondeur
+description: ffprobe le montage et en tire les conformites mesurables.
+version: 1
+tools:
+  - media.probe
+inputs:
+  montage:
+    type: object
+    required: true
+outputs:
+  probe:
+    type: object
+    schema: catalog/schemas/probe.schema.json
+budget: 0.10

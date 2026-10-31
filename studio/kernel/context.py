@@ -40,6 +40,7 @@ CONTEXT: dict[str, Any] = {
     "on_item_failure": "studio:on_item_failure",
     "question": "studio:question",
     "options": {"@id": "studio:options", "@container": "@set"},
+    "as": "studio:as",
     "kind": "studio:kind",
     "server": "studio:server",
     "tool": "studio:tool",
