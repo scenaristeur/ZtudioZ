@@ -138,6 +138,12 @@ class OpenAICompatImageProvider:
         """Cout declare par image ; affinable quand la table de prix existe."""
         return self.cost
 
+    def _resolve_model(self, agent_model: str) -> str:
+        """Meme regle que le provider LLM : les placeholders mock* cèdent la place."""
+        if agent_model and not agent_model.startswith("mock"):
+            return agent_model
+        return self.model
+
     async def generate(
         self,
         *,
@@ -157,7 +163,7 @@ class OpenAICompatImageProvider:
             raise RuntimeError(f"cle absente: {self.api_key_env}")
 
         body: dict[str, Any] = {
-            "model": model or self.model,
+            "model": self._resolve_model(model),
             "prompt": f"{system}\n\n{prompt}" if system else prompt,
             "size": self.size,
             "n": 1,

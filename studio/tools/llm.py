@@ -154,6 +154,13 @@ class OpenAICompatProvider:
         """Cout declare par appel ; affinable quand la table de prix existe."""
         return self.cost
 
+    def _resolve_model(self, agent_model: str) -> str:
+        """Un agent qui declare un modele reel garde son modele ; les placeholders
+        mock/* cèdent la place au modele configure par l'operateur du run."""
+        if agent_model and not agent_model.startswith("mock"):
+            return agent_model
+        return self.model
+
     async def complete(
         self,
         *,
@@ -173,7 +180,7 @@ class OpenAICompatProvider:
             raise RuntimeError(f"cle absente: {self.api_key_env}")
 
         body: dict[str, Any] = {
-            "model": model or self.model,
+            "model": self._resolve_model(model),
             "temperature": self.temperature,
             "messages": [
                 {"role": "system", "content": system},

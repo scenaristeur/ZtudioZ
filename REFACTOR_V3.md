@@ -5,7 +5,7 @@
 > `main`). C'est ici que l'on met à jour l'avancement, les décisions et la dette technique.
 >
 > **Statut** : **M0 + M1 réalisés** — noyau complet, artefacts binaires typés et lignés,
-> adaptateur image, verdict vision, gate sur images, invalidation aval, 53 tests verts,
+> adaptateur image, verdict vision, gate sur images, invalidation aval, 56 tests verts,
 > démo CLI M1 fonctionnelle (0 appel réseau).
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
@@ -152,7 +152,7 @@ studio/
     schemas/*.schema.json   contrats de sortie
     tools.yamlld         registre des capacités (kind: python | mcp)
   cli.py           run | journal | validate
-tests/             11 fichiers, 53 tests
+tests/             12 fichiers, 56 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -384,7 +384,7 @@ Chaque palier est démontrable et se termine par une validation humaine.
 | Palier | Contenu | Critères d'acceptation | Coût | État |
 |---|---|---|---|---|
 | **M0** conversation | noyau complet, 3 agents LLM, 1 gate, 1 workflow, provider mock | YAML-LD validé ; DAG exécuté ; gate bloquante ; reprise après gate ; parallélisme prouvé par test ; **0 appel réseau** | 0 | **réalisé, 29 tests verts** |
-| **M1** scénario + photos | artefacts typés + binaires, adaptateur image, vérif vision, gate sur images, invalidation par lignée | 3 shots + 3 images avec refs ; verdict vision ; coût journalisé ; 2ᵉ run = cache hit ; changement de ref → invalidation aval **uniquement** | tests 0 / run réel sur demande | **réalisé, 53 tests verts** |
+| **M1** scénario + photos | artefacts typés + binaires, adaptateur image, vérif vision, gate sur images, invalidation par lignée | 3 shots + 3 images avec refs ; verdict vision ; coût journalisé ; 2ᵉ run = cache hit ; changement de ref → invalidation aval **uniquement** | tests 0 / run réel sur demande | **réalisé, 56 tests verts** |
 | **M2** assets + montage | `ToolAgent` (ffmpeg), dispatch des outils, `on_item_failure`, sous-workflows, `retry` de gate | `ffprobe` conforme ; montage reproductible ; échec d'un item n'arrête pas le run | 0 | à faire |
 | **M3** intégration v1 | **refonte complète** de `pipeline/`, `api/`, `web/` : adaptateurs providers, routes, UI pilotée par le graphe | un projet réel avance d'un palier à l'autre depuis la CLI et depuis le web | selon run | à faire |
 | **M4** production | reprise des acquis : cohérence refs, double-ancre, keyframes, budget, rapports | un plan produit et vérifié par vision, sans régression de cohérence | selon run | à faire |
@@ -417,7 +417,8 @@ Tests de M0 (écrits avant toute implémentation) — **29 tests, tous verts** :
 | `test_resume.py` | 3 | 2ᵉ run identique = 0 appel, reprise après gate = uniquement les nœuds restants, entrée modifiée re-exécute selon les entrées **déclarées** |
 | `test_m0_e2e.py` | 3 | workflow complet mocké, brief valide contre son schéma, blocage sans réponse de gate, `studio validate` sort 0 |
 
-Tests ajoutés à M1 (écrits rouges avant implémentation) — **+24 tests, 53 verts** :
+Tests ajoutés à M1 (écrits rouges avant implémentation) — **+24 tests** ; +3 pour le run réel
+et le CLI (`test_providers.py`, `--image-provider`) — **56 verts au total** :
 
 | Test | Tests | Garantie |
 |---|---|---|
@@ -487,7 +488,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 53 passed
+.venv/bin/python -m pytest tests/      # 56 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -526,6 +527,8 @@ condition de :
 | 2026-10-31 | M1 | Un binaire ne circule **jamais** en base64 dans le JSON : il circule référencé `{"artifact", "media_type", "bytes"}` ; l'empreinte porte les octets bruts | assistant |
 | 2026-10-31 | M1 | Coût journalisé : chaque `node_finished` porte `cost`, `RunState.cost` cumule hors unités `#i`, le CLI l'affiche ; `MockImageProvider` produit de vrais PNG (aucun réseau en test) | assistant |
 | 2026-10-31 | M1 | Démo validée : `m1-scene` bloque à la gate (exit 3), reprend avec `--answer`, 2ᵉ run identique sans production, changement de ref = réexamen de l'aval seul (`shots` en cache) | assistant |
+| 2026-10-31 | M1 | **Run réel Albert (etalab)** sur demande : M0 complet (brief + traitement conformes aux schémas) et M1 (5 shots réels). Découverte : le verdict du `continuity-checker` réel est `ok=false` parce qu'il ne reçoit que des **références JSON**, pas les plans ni les pixels — la vérification vision multimodale reste à brancher (M4) | assistant + albert |
+| 2026-10-31 | M1 | Deux garde-fous ajoutés pour le run réel : `--image-provider` distinct du provider LLM (mock image quand le provider texte n'a pas d'endpoint images) et `_resolve_model` (un agent qui déclare `model: mock/echo` cède la place au modèle de l'opérateur ; un modèle réel déclaré est respecté) | assistant |
 
 ---
 
@@ -549,7 +552,7 @@ empêche de croire que le noyau est fini. D1–D3 sont clos en M1, D16–D18 ouv
 | D11 | **Budget = coût fixe par appel** (`provider.estimate()`), pas de coût réel token/image | `tools/llm.py::estimate`, `tools/images.py::estimate` | M3 |
 | D12 | **Un seul agent par nœud** : pas de fan-out multi-agent ni de vote/consensus entre agents | `graph.Node` | M3 |
 | D13 | **`SIGINT` non rattrapé** dans le CLI : la reprise est vérifiée au niveau moteur, pas au signal | `cli.py` | M2 |
-| D14 | Les **providers réels ne sont jamais exercés** : `OpenAICompatProvider` et `OpenAICompatImageProvider` sont écrits, non testés en run | `tools/llm.py`, `tools/images.py` | run réel sur demande |
+| D14 | **Premier run réel exercé le 2026-10-31** : `OpenAICompatProvider` validé contre Albert (etalab, `openai/gpt-oss-120b`) sur M0 complet et M1 (5 shots réels, verdict honnête). `OpenAICompatImageProvider` reste **non exercé** : Albert n'expose pas d'endpoint de génération d'images | `tools/llm.py` (clos), `tools/images.py` (reste) | M3/M4 quand un provider images réel sera branché |
 | D15 | Les **11 skills v1 ne sont pas encore joignables** : seuls les packs de `catalog/skills/` le sont | `load_registry(extra_skill_roots=...)` | M3 |
 | D16 | **`ImageAgent` est un type provisoire** : il préempte la branche `ToolAgent` de M2 et ne passe pas par le dispatch `kind: python \| mcp \| cli` | `executor._exec_image` | M2 : absorbé |
 | D17 | **`invalidate()` n'est pas exposé** : la purge active par lignée est dans le store et les tests, pas dans le CLI (`studio invalidate <hash>`) | `kernel/artifacts.py`, `cli.py` | M2 |

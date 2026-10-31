@@ -75,7 +75,7 @@ def cmd_run(args) -> int:
         store=ArtifactStore(Path(args.runs) / "artifacts"),
         journal=Journal(Path(args.runs) / "journal.jsonl"),
         answers=answers,
-        image=_build_image_provider(args.provider),
+        image=_build_image_provider(args.image_provider or args.provider),
     )
     result = asyncio.run(executor.run(args.workflow, inputs))
 
@@ -117,6 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--input", default="{}")
     run.add_argument("--answer", action="append", default=[])
     run.add_argument("--provider", default="mock", choices=["mock", "openai"])
+    run.add_argument("--image-provider", default=None, choices=["mock", "openai"])
     run.set_defaults(func=cmd_run)
 
     journal = sub.add_parser("journal", help="affiche le journal")

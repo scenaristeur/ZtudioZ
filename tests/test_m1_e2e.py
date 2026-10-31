@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 
@@ -172,3 +173,26 @@ def test_cli_runs_m1_with_mock_provider(tmp_path):
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "verdict" in completed.stdout
+
+
+def test_cli_image_provider_can_differ_from_the_llm_provider(tmp_path):
+    # le llm reste en mock ; l'adaptateur image exige une cle absente -> echec net
+    env = {**os.environ, "OPENAI_API_KEY": ""}
+    completed = subprocess.run(
+        [
+            sys.executable, "-m", "studio.cli",
+            "--runs", str(tmp_path / "runs"),
+            "run", "studio:workflow/m1-scene",
+            "--input", json.dumps(INPUTS),
+            "--answer", "gate_images=continue",
+            "--provider", "mock",
+            "--image-provider", "openai",
+        ],
+        cwd=STUDIO_ROOT.parent,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.returncode == 1
+    assert "cle absente" in completed.stdout + completed.stderr
