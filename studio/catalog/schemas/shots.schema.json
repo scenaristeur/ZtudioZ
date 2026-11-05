@@ -1,16 +1,23 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Liste de plans",
-  "description": "Decoupage d'une scene en plans numerotes, un prompt visuel par plan.",
+  "description": "Decoupage d'une scene en plans numerotes, un prompt visuel par plan. Le nombre est borne par la contrainte de l'auteur (constraints.max_shots), pas par ce schema.",
   "type": "array",
-  "minItems": 3,
+  "minItems": 1,
   "items": {
     "type": "object",
-    "required": ["prompt"],
+    "required": [
+      "prompt"
+    ],
     "additionalProperties": false,
     "properties": {
-      "id": {"type": "integer"},
-      "prompt": {"type": "string", "minLength": 1}
+      "id": {
+        "type": "integer"
+      },
+      "prompt": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   }
 }

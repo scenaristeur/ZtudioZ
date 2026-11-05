@@ -420,3 +420,43 @@ nodes:
     assert result.status == "completed"
     assert provider.calls == 2
     assert [e for e in journal.events() if e["type"] == "items_truncated"][0]["kept"] == 2
+
+
+# --- 5. le schema des plans ne peut pas contredire la contrainte --------------
+
+
+def test_le_schema_des_plans_accepte_deux_plans():
+    """Un decoupage de 2 plans est legitime : l'auteur peut demander 2 plans."""
+    schema = json.loads((STUDIO_ROOT / "catalog" / "schemas" / "shots.schema.json").read_text())
+    deux = [{"id": 1, "prompt": "plan 1"}, {"id": 2, "prompt": "plan 2"}]
+
+    jsonschema.validate(deux, schema)
+
+
+def test_le_schema_des_plans_refuse_une_liste_vide():
+    schema = json.loads((STUDIO_ROOT / "catalog" / "schemas" / "shots.schema.json").read_text())
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate([], schema)
+
+
+def test_un_brief_a_deux_plans_traverse_m1_sans_contradiction(tmp_path):
+    """Le cas reel : le LLM obeit au brief (2 plans), le schema doit suivre."""
+    deux = {
+        "shots": [
+            {"id": 1, "prompt": "Le tourbier avance, la lanterne vacille."},
+            {"id": 2, "prompt": "La lumiere se fond dans la brume."},
+        ]
+    }
+    executor, _, image = make_m1(
+        tmp_path,
+        {"shot-list": deux, "continuity-checker": {"verdict": {"ok": True, "notes": "bon"}}},
+    )
+
+    result = asyncio.run(
+        executor.run("studio:workflow/m1-scene", M1_INPUTS, answers={"gate_images": "continue"})
+    )
+
+    assert result.status == "completed", result.error
+    assert len(result.outputs["image"]) == 2
+    assert image.calls == 3

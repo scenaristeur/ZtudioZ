@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés** — noyau complet, artefacts binaires typés et lignés,
 > adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par ffprobe,
-> échec d'item borné, sous-workflows, retry de gate, SIGINT, 104 tests verts, démos CLI
+> échec d'item borné, sous-workflows, retry de gate, SIGINT, 131 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés).
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
@@ -156,7 +156,7 @@ studio/
     schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
   cli.py           run | journal | validate | invalidate | --skills-root
-tests/             22 fichiers, 104 tests
+tests/             24 fichiers, 131 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -428,7 +428,7 @@ Chaque palier est démontrable et se termine par une validation humaine.
 | Palier | Contenu | Critères d'acceptation | Coût | État |
 |---|---|---|---|---|
 | **M0** conversation | noyau complet, 3 agents LLM, 1 gate, 1 workflow, provider mock | YAML-LD validé ; DAG exécuté ; gate bloquante ; reprise après gate ; parallélisme prouvé par test ; **0 appel réseau** | 0 | **réalisé, 29 tests verts** |
-| **M1** scénario + photos | artefacts typés + binaires, adaptateur image, vérif vision, gate sur images, invalidation par lignée | 3 shots + 3 images avec refs ; verdict vision ; coût journalisé ; 2ᵉ run = cache hit ; changement de ref → invalidation aval **uniquement** | tests 0 / run réel sur demande | **réalisé, 56 tests verts** |
+| **M1** scénario + photos | artefacts typés + binaires, adaptateur image, vérif vision, gate sur images, invalidation par lignée | 3 shots + 3 images avec refs ; verdict vision ; coût journalisé ; 2ᵉ run = cache hit ; changement de ref → invalidation aval **uniquement** | tests 0 / run réel sur demande | **réalisé ; run réel 2026-11-05 : brief contraint (max 2 plans) → 2 plans → 2 images JPEG, 57 s** |
 | **M2** assets + montage | `ToolAgent` (ffmpeg), dispatch des outils, `on_item_failure`, sous-workflows, `retry` de gate | `ffprobe` conforme ; montage reproductible ; échec d'un item n'arrête pas le run | 0 | **réalisé, 80 tests verts** |
 | **M3** intégration v1 | **refonte complète** de `pipeline/`, `api/`, `web/` : adaptateurs providers, routes, UI pilotée par le graphe | un projet réel avance d'un palier à l'autre depuis la CLI et depuis le web | selon run | à faire |
 | **M4** production | reprise des acquis : cohérence refs, double-ancre, keyframes, budget, rapports | un plan produit et vérifié par vision, sans régression de cohérence | selon run | à faire |
@@ -494,8 +494,8 @@ Tests ajoutés après M2 (run réel & branchements) — **+24 tests, 104 verts**
 | `test_images.py` (+2) | 2 | `_text_prompt` : phrase naturelle du plan, pas de bloc JSON dans le prompt d'image |
 | `test_m1_e2e.py` (+1) | 1 | `notes` du verdict : chaîne ou liste, selon le schéma élargi |
 
-Tests ajoutés pour D24 (contraintes du brief jusqu'aux plans) — rouges d'abord, **+21 tests,
-125 verts** :
+Tests ajoutés pour D24 (contraintes du brief jusqu'aux plans) — rouges d'abord, **+24 tests,
+131 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
@@ -503,6 +503,10 @@ Tests ajoutés pour D24 (contraintes du brief jusqu'aux plans) — rouges d'abor
 | `test_constraints.py` (borne) | 8 | `limit` borne le fan-out, une borne plus grande que la liste ne perd rien, sans `limit` tous les items passent, troncature journalisée (`produced`/`kept`), **élargir 2→4 ne repaie que les 2 manquants**, même borne = cache, `limit: 0` et `limit: "deux"` refusés au chargement, `${racine_inconnue}` = échec net |
 | `test_constraints.py` (transport) | 4 | `shot-list` et `m1-scene` déclarent le `brief`, le brief traverse réellement jusqu'au prompt de l'agent, le pack `scenario-structure` exige de coucher les contraintes |
 | `test_constraints.py` (catalogue livré) | 4 | **feu-follet ne peut plus produire 6 plans** : le LLM surcompte (6 shots), le moteur ne paie que 2 images et journalise la troncature ; sans contrainte, les 6 plans passent tous ; le mock honore `minimum` |
+| `test_constraints.py` (schéma des plans, D27) | 3 | un découpage de **2 plans** est valide, une liste vide reste refusée, et un brief à 2 plans traverse M1 sans contradiction schéma/contrainte |
+
+Note D27 : ces 3 tests sont nés du **run réel**, pas d'une revue. Les fixtures mock fournissaient
+toujours 3 plans ; le vrai LLM, lui, a obéi au brief et produit 2 plans que le schéma refusait.
 
 ---
 
@@ -625,6 +629,10 @@ condition de :
 | 2026-11-05 | D24 | Guidance `constraints` écrite dans le **pack** `scenario-structure` (partagé par les agents), pas dans le prompt de `brief-synthesizer` : évite d'écraser le WIP de l'humain, et c'est le bon endroit — de la connaissance, pas une instruction par agent | assistant |
 | 2026-11-05 | D24 | Effet de bord trouvé par un run vert qui ne l'était pas : `_fake_value` du mock fabriquait `max_shots: 0`, contraire au schéma qu'il est censé honorer (`minItems` était honoré, `minimum` non). Le mock n'a pas le droit de produire un artefact invalide | assistant |
 | 2026-11-05 | D24 | Dettes ouvertes consignées : **D25** (pas de contexte projet — la contrainte traverse parce qu'on redéclare `brief` partout, l'oubli ne serait pas signalé) et **D26** (`freeform` n'est qu'une espérance de prompt, seul le nombre est enforceable) | assistant |
+| 2026-11-05 | run réel | **feu-follet-v2** : même discussion que l'ancien run, nouveau dossier. M0 réel (Albert) : le brief porte enfin `constraints.max_shots: 2` + `freeform` — l'ancien brief n'en avait aucune trace. Gate brief montrée et validée par l'humain avant `continue` | assistant + humain |
+| 2026-11-05 | run réel | **Le run réel a trouvé ce que 125 tests verts ne voyaient pas** : `shots.schema.json` exigeait `minItems: 3`, le LLM produisait 2 plans conformes au brief → `node_failed`. Le schéma du catalogue interdisait la contrainte de D24. Toutes les fixtures mock fournissaient 3 plans, d'où l'angle mort | assistant |
+| 2026-11-05 | D27 | 2 tests rouges (`2 plans valides`, `liste vide refusée`), `minItems: 3 → 1`, **131 verts**. Reprise du run : planche de référence en cache, `shots` + 2 images réels, **57 s**, statut `blocked` à la gate | assistant |
+| 2026-11-05 | run réel | Gate images montrée (3 chemins de fichiers, quota : 3 images Pollinations) ; l'humain répond `continue`. Verdict : `ok=false`, « impossible d'évaluer, le brief n'est pas fourni ». **Le contrôleur est affamé par construction** → **D28** (il ne reçoit ni shots, ni référence, ni brief), distinct de D23 | assistant + humain |
 
 ---
 
@@ -634,7 +642,7 @@ Liste volontairement exhaustive : c'est le carnet de charges du palier suivant, 
 empêche de croire que le noyau est fini. Clos : D1–D3 (M1), D4–D9, D13, D17, D18 (M2),
 D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp), D24 (contraintes
 transportées et bornées).
-Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26.
+Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D28.
 
 | # | Écart | Où le voir | À traiter |
 |---|---|---|---|
@@ -664,6 +672,8 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26.
 | ~~D24~~ | ~~Contraintes du brief perdues avant les plans~~ | **clos** : `constraints.max_shots` entre dans le schéma du brief, `brief` devient entrée déclarée de `m1-scene` et de `shot-list`, et `limit:` borne le `foreach` avec troncature journalisée. Garde fou : feu-follet (6 shots produits par le LLM, max 2 demandé) ne paie plus que 2 images | — |
 | D25 | **Pas de contexte projet** : la contrainte traverse parce qu'on redéclare `brief` à chaque workflow et à chaque agent. Un nouveau palier qui oublie de le faire perd la contrainte, et rien ne le signale. Il manque un objet projet porté par le graphe, hérité par tous les nœuds sans redéclaration | `catalog/workflows/*.yamlld` (entrées répétées), `executor._resolve_inputs` | M3 |
 | D26 | **Seul `max_shots` est enforceable** : les contraintes de `constraints.freeform` (« pas de dialogue », « fin ambigue ») ne voyagent que dans le prompt ; aucun contrôle ne vérifie qu'elles sont tenues. La borne numérique est dure, la contrainte de forme est une espérance | `catalog/agents/shot-list.yamlld` (prompt), absence de vérificateur | M4 (avec D23, quand le multimodal verra les rushes) |
+| ~~D27~~ | ~~`shots.schema.json` exigeait `minItems: 3`~~ | **clos (trouvé par le run réel du 2026-11-05)** : le LLM produisait 2 plans conformes à `constraints.max_shots`, le schéma refusait (`is too short`). Le schéma contredisait la contrainte que D24 venait d'implémenter. `minItems: 1`, 2 tests : 2 plans valides, liste vide toujours refusée | — |
+| D28 | **Le `continuity-checker` est affamé** : il ne déclare que `images` en entrée et le nœud `verdict` ne dépend que de `images` + la gate. Il ne reçoit ni `shots`, ni `reference`, ni `brief`, donc son verdict est structurellement vide : `ok=false`, « impossible d'évaluer, fournissez le brief ». Distinct de D23 (absence de pixels) : même comme proxy texte il n'a rien à comparer | `catalog/agents/continuity-checker.yamlld`, `workflows/m1-scene.yamlld` (nœud `verdict`) | prochain pas |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles

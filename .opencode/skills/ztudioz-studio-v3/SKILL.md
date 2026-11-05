@@ -74,10 +74,12 @@ chiffre à l'humain à la gate (« le découpage proposait 6 plans, 2 gardés »
 
 Livrables : `outputs.image[]` = références d'artefacts ; les vraies images sont dans
 `runs/<slug>/artifacts/<hash>.jpg` — ouvres-les, c'est ce que l'humain doit voir à la gate.
-Attention : le verdict du `continuity-checker` est un **proxy texte** (dette D23) —
-`ok=false` avec notes = comportement sain, pas un bug. Les contraintes non chiffrées
-(`constraints.freeform`, « pas de dialogue », « fin ambiguë ») ne voyagent que dans le prompt :
-aucun contrôle ne vérifie qu'elles sont tenues (dette D26).
+Attention : le verdict du `continuity-checker` est un **proxy texte** (dette D23) et, en plus, il
+ne reçoit aujourd'hui **ni les plans, ni la référence, ni le brief** (dette D28) : son `ok=false`
+avec « impossible d'évaluer » est structurel, pas un bug de ton run. Ne présente pas ce verdict
+comme une validation visuelle — l'humain a vu les images, c'est lui qui a jugé.
+Les contraintes non chiffrées (`constraints.freeform`, « pas de dialogue », « fin ambiguë ») ne
+voyagent que dans le prompt : aucun contrôle ne vérifie qu'elles sont tenues (dette D26).
 
 ### M2 — plans -> clips -> montage -> gate -> ffprobe
 ```bash
