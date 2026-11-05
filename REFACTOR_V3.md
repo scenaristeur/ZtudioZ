@@ -6,12 +6,13 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 184 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 186 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
-> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.4 livrées** : un projet
+> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
 > les workflows héritent du brief sans le redéclarer, le journal d'un run terminé nourrit le
-> palier suivant, et une API Starlette expose projets, runs, journal, artefacts et gates.
+> palier suivant, une API Starlette expose projets, runs, journal, artefacts et gates, et une
+> UI Vue 3 pilotée par le graphe affiche l'état du run et répond aux gates.
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
@@ -161,9 +162,10 @@ studio/
     schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
   api/             app.py (Starlette), service.py (journal, artefacts, gates)
+  web/             UI Vue 3 + Vite pilotee par le graphe (dist servi par l'API)
   cli.py           run | journal | validate | invalidate | serve | --skills-root | --project
   project.py       studio.yaml -> providers + contexte + racine artefacts/journal
-tests/             30 fichiers, 184 tests
+tests/             31 fichiers, 186 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -459,7 +461,7 @@ depuis le web. Le travail est découpé en tranches démontrables, chacune TDD :
 | 2 | **Contexte projet hérité** : brief, contraintes et référence portés par le projet, injectés sans redéclaration à chaque nœud — **fait** | changer le brief du projet invalide l'aval sans toucher aux workflows | D25 |
 | 3 | **Enchaînement des paliers** : M0 → M1 → M2 depuis la CLI, gates humaines inchangées — **fait** | un projet avance jusqu'au montage, reprise après `Ctrl-C` comprise | D10 |
 | 4 | **API** : projets, runs, journal, artefacts, réponse aux gates — **fait** | le journal d'un run est lisible en HTTP, une gate se répond sans CLI | D11, D16 |
-| 5 | **Web** : UI pilotée par le graphe, plus de vues par étape | une gate se voit et se répond dans le navigateur | D22 |
+| 5 | **Web** : UI pilotée par le graphe, plus de vues par étape — **fait** | une gate se voit et se répond dans le navigateur | D22 |
 | 6 | **Clôture M3** : coûts réels, toolkit v1 exposé, replay | un run réel se pilote de bout en bout depuis le web | D11, D22, D30 |
 
 Le stockage public de la vidéo reste `tmpfiles.org` : décision humaine du 2026-11-05,
@@ -620,6 +622,18 @@ L'API ne duplique pas le CLI : elle lit le même journal et relance avec les pro
 contexte du projet. Une gate répondue sans être en attente est refusée (409), et un seul run
 peut tourner par projet.
 
+Tests ajoutés pour la tranche M3.5 (UI Vue 3 pilotée par le graphe) — **+2 tests, 186 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_api.py` (graphe) | 1 | `GET .../runs/{id}/graph` renvoie niveaux, nœuds, dépendances, gates, options, état terminé et artefact par nœud |
+| `test_api.py` (UI) | 1 | `studio serve` sert `web/dist` (index Vue) quand le build existe ; les routes `/api` restent prioritaires |
+
+L'UI est une seule vue : liste des projets, runs, colonnes du DAG, cartes de nœuds (gate,
+complété, en attente), aperçu image/vidéo des artefacts, panneau de gate et queue de journal.
+Elle interroge l'API toutes les 2 s ; le build Vite est committé pour que `studio serve` soit
+utilisable sans `npm install`.
+
 ---
 
 ## 9. Garde-fous
@@ -681,7 +695,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 184 passed
+.venv/bin/python -m pytest tests/      # 186 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -759,6 +773,7 @@ condition de :
 | 2026-11-05 | M3.2 | **D25 clos** : contexte projet hérité. 8 tests rouges d'abord, **175 verts**. `context:` au `studio.yaml`, déclaré une fois par workflow (`context: [brief]` requis ou `{brief: {required: false}}`), fusionné aux entrées (l'explicite gagne), validé avant tout appel, borne `limit` résolue depuis le contexte. `m1-scene` ne redéclare plus `brief`. Démo : `--project` + brief `max_shots: 1` → une seule image, sans `brief` dans `--input` | assistant |
 | 2026-11-05 | M3.3 | **Enchaînement des paliers** : 3 tests rouges d'abord, **178 verts**. La mémoire du projet = entrées + sorties du dernier run **terminé**, filtrées par les entrées/context du workflow cible ; priorité `--input` > contexte > journal ; un run bloqué ne nourrit pas la mémoire ; le CLI affiche `herite du journal`. Démo : M0 mock → M1 mock avec seulement `reference`, `treatment` et `brief` hérités | assistant |
 | 2026-11-05 | M3.4 | **API Starlette** : 6 tests rouges d'abord, **184 verts**. `studio serve` expose projets, détail, journal, runs, artefacts et `POST .../gates/{id}` ; la reprise tourne en tâche de fond et le client suit le journal. Garde-fous : slug sans traversée, artefact hash-only, gate en attente obligatoire (409), réponse dans les options (400), un run par projet. Démo : deux gates répondues en HTTP → `completed`, 6 artefacts | assistant |
+| 2026-11-05 | M3.5 | **UI Vue 3 pilotée par le graphe** : 2 tests rouges d'abord, **186 verts**. `GET .../graph` expose niveaux/nœuds/gates/artefacts, `studio serve` monte `web/dist`. Une seule vue : projets, runs, DAG en colonnes, aperçu image/vidéo, panneau de gate, journal. Vite + Vue, build 71 Ko, polling 2 s. Démo : `GET /` sert l'index, le graphe d'un run bloqué expose `gate_clips` | assistant |
 
 ---
 

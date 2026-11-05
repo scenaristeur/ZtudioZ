@@ -128,6 +128,57 @@ def run_start(events: list[dict], run_id: str) -> tuple[str, dict] | tuple[None,
     return None, None
 
 
+def run_graph(project: Project, run_id: str, registry) -> dict:
+    """Graphe du workflow d'un run, fusionne avec son etat journalise."""
+    from ..kernel.context import short_iri
+
+    journal_events = events(project)
+    workflow, _ = run_start(journal_events, run_id)
+    if workflow is None:
+        raise HTTPException(404, "run inconnu")
+    graph = registry.graph(workflow)
+    state = Journal(project.journal).state(run_id)
+    store = ArtifactStore(project.artifacts)
+    gate = pending_gate(journal_events, run_id)
+
+    nodes = []
+    for node_id in graph.order:
+        node = graph.node(node_id)
+        artifact = state.artifacts.get(node_id)
+        nodes.append(
+            {
+                "id": node.id,
+                "agent": short_iri(node.agent_id) if node.agent_id else None,
+                "workflow": short_iri(node.workflow_id) if node.workflow_id else None,
+                "needs": list(node.needs),
+                "foreach": node.foreach,
+                "limit": node.limit,
+                "is_gate": node.is_gate,
+                "question": node.question,
+                "options": list(node.options),
+                "completed": node_id in state.completed,
+                "artifact": (
+                    {
+                        "hash": artifact,
+                        "media_type": store.media_type(artifact),
+                        "url": f"/api/projects/{project.root.name}/artifacts/{artifact}",
+                    }
+                    if artifact
+                    else None
+                ),
+            }
+        )
+
+    runs = {run["run_id"]: run for run in summarize(journal_events)}
+    return {
+        "run": runs.get(run_id),
+        "workflow": workflow,
+        "levels": graph.levels,
+        "nodes": nodes,
+        "gate": gate,
+    }
+
+
 def run_detail(project: Project, run_id: str) -> dict:
     runs = {run["run_id"]: run for run in summarize(events(project))}
     run = runs.get(run_id)
@@ -135,10 +186,12 @@ def run_detail(project: Project, run_id: str) -> dict:
         raise HTTPException(404, "run inconnu")
 
     state = Journal(project.journal).state(run_id)
+    store = ArtifactStore(project.artifacts)
     artifacts = [
         {
             "node": node,
             "hash": artifact,
+            "media_type": store.media_type(artifact),
             "url": f"/api/projects/{project.root.name}/artifacts/{artifact}",
         }
         for node, artifact in sorted(state.artifacts.items())

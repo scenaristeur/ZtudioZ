@@ -5,3 +5,4 @@ __pycache__/
 runs/
 artifacts/
 .env
+web/node_modules/

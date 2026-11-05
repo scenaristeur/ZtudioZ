@@ -9,7 +9,8 @@ from pathlib import Path
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.responses import FileResponse, JSONResponse
-from starlette.routing import Route
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
 from ..kernel.artifacts import ArtifactStore
 from ..kernel.executor import Executor
@@ -83,6 +84,12 @@ def create_app(projects_root: str | Path, registry=None) -> Starlette:
         project = service.resolve_project(root, request.path_params["slug"])
         return JSONResponse(service.run_detail(project, request.path_params["run_id"]))
 
+    async def run_graph(request):
+        project = service.resolve_project(root, request.path_params["slug"])
+        return JSONResponse(
+            service.run_graph(project, request.path_params["run_id"], registry)
+        )
+
     async def artifact(request):
         project = service.resolve_project(root, request.path_params["slug"])
         path, media_type = service.artifact_path(
@@ -138,18 +145,23 @@ def create_app(projects_root: str | Path, registry=None) -> Starlette:
             status_code=202,
         )
 
-    return Starlette(
-        routes=[
-            Route("/api/health", health),
-            Route("/api/projects", list_projects),
-            Route("/api/projects/{slug}", project_detail),
-            Route("/api/projects/{slug}/journal", journal),
-            Route("/api/projects/{slug}/runs/{run_id}", run_detail),
-            Route("/api/projects/{slug}/artifacts/{artifact}", artifact),
-            Route(
-                "/api/projects/{slug}/runs/{run_id}/gates/{gate_id}",
-                answer_gate,
-                methods=["POST"],
-            ),
-        ]
-    )
+    routes = [
+        Route("/api/health", health),
+        Route("/api/projects", list_projects),
+        Route("/api/projects/{slug}", project_detail),
+        Route("/api/projects/{slug}/journal", journal),
+        Route("/api/projects/{slug}/runs/{run_id}", run_detail),
+        Route("/api/projects/{slug}/runs/{run_id}/graph", run_graph),
+        Route("/api/projects/{slug}/artifacts/{artifact}", artifact),
+        Route(
+            "/api/projects/{slug}/runs/{run_id}/gates/{gate_id}",
+            answer_gate,
+            methods=["POST"],
+        ),
+    ]
+
+    dist = Path(__file__).resolve().parents[2] / "web" / "dist"
+    if dist.is_dir():
+        routes.append(Mount("/", app=StaticFiles(directory=str(dist), html=True)))
+
+    return Starlette(routes=routes)

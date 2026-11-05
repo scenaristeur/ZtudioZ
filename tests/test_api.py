@@ -8,6 +8,8 @@ en arriere-plan, et le client suit le journal.
 import asyncio
 import json
 
+import pytest
+
 from studio.api.app import create_app
 from studio.kernel.artifacts import ArtifactStore
 from studio.kernel.executor import Executor
@@ -150,6 +152,28 @@ def test_api_detail_run_et_artefacts(tmp_path):
     asyncio.run(scenario())
 
 
+def test_api_graphe_du_run(tmp_path):
+    root, path = project(tmp_path)
+    blocked = block_at_gate(path, answers={"gate_clips": "continue"})
+
+    async def scenario():
+        app = create_app(root)
+        status, graph = await get_json(
+            app, f"/api/projects/demo/runs/{blocked.run_id}/graph"
+        )
+        assert status == 200
+        assert graph["gate"]["id"] == "gate_montage"
+        ids = [node["id"] for node in graph["nodes"]]
+        assert "gate_clips" in ids and "clips" in ids
+        gate = next(node for node in graph["nodes"] if node["id"] == "gate_montage")
+        assert gate["is_gate"]
+        assert gate["options"] == ["continue", "retry", "stop"]
+        assert any(node["completed"] for node in graph["nodes"])
+        assert graph["levels"]
+
+    asyncio.run(scenario())
+
+
 def test_api_404_et_slug_invalide(tmp_path):
     root, _ = project(tmp_path)
 
@@ -200,6 +224,21 @@ def test_api_repond_aux_gates_jusqu_au_bout(tmp_path):
             await asyncio.sleep(0.01)
         assert run["run"]["status"] == "completed"
         assert any(a["hash"] for a in run["artifacts"])
+
+    asyncio.run(scenario())
+
+
+def test_api_sert_l_ui_si_dist_existe(tmp_path):
+    root, _ = project(tmp_path)
+    dist = STUDIO_ROOT.parent / "web" / "dist"
+    if not dist.is_dir():
+        pytest.skip("web/dist absent (npm run build)")
+
+    async def scenario():
+        app = create_app(root)
+        status, raw = await call(app, "GET", "/")
+        assert status == 200
+        assert b'<div id="app">' in raw
 
     asyncio.run(scenario())
 

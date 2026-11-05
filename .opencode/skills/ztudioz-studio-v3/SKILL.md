@@ -74,6 +74,19 @@ python -m studio.cli serve --projects runs --port 8000
 L'API ne lance pas encore de nouveaux runs : elle répond aux gates. Pas d'authentification —
 écoute sur `127.0.0.1` uniquement. Un seul run à la fois par projet.
 
+### UI web
+
+```bash
+cd web && npm install && npm run build   # dist committé, inutile en général
+cd .. && python -m studio.cli serve --projects runs
+# http://127.0.0.1:8000
+```
+
+La page est **pilotée par le graphe** : projets, runs, colonnes du DAG, cartes de nœuds
+(gate / complété / en attente), aperçu image et vidéo des artefacts, panneau de gate,
+journal. Elle interroge l'API toutes les 2 s. Pour développer : `npm run dev` (Vite proxifie
+`/api` vers `127.0.0.1:8000`).
+
 ## Règles permanentes
 
 - Ne jamais écrire dans `/home/smag/dev/ZtudioZ/projets/` ni modifier `main`.
