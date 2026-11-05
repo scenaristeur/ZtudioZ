@@ -22,3 +22,8 @@ nodes:
   - id: treatment
     agent: studio:agent/script-editor
     needs: [brief, gate_brief]
+  - id: gate_treatment
+    type: studio:HumanGate
+    needs: [treatment]
+    question: Le traitement est-il pret pour le palier suivant ?
+    options: [continue, retry, stop]

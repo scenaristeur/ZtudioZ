@@ -400,6 +400,46 @@ h2 {
   cursor: wait;
 }
 
+.gate-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(224, 168, 0, 0.25);
+}
+
+.gate-feedback label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.gate-feedback textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0a0c10;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.gate-feedback button.retry {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  background: var(--panel);
+}
+
+.gate-feedback button.retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .journal {
   margin-top: 28px;
 }

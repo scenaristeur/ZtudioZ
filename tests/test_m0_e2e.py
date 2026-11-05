@@ -47,7 +47,7 @@ def test_m0_produces_a_valid_brief_without_network(tmp_path):
         executor.run(
             "studio:workflow/m0-conversation",
             {"discussion": "On parle d'un phare et d'une voix dans la tempete."},
-            answers={"gate_brief": "continue"},
+            answers={"gate_brief": "continue", "gate_treatment": "continue"},
         )
     )
 
@@ -59,7 +59,9 @@ def test_m0_produces_a_valid_brief_without_network(tmp_path):
     jsonschema.validate(result.outputs["brief"], schema)
 
     state = executor.journal.state()
-    assert result.completed >= {"sources", "brief", "gate_brief", "treatment"}
+    assert result.completed >= {
+        "sources", "brief", "gate_brief", "treatment", "gate_treatment"
+    }
 
 
 def test_m0_without_gate_answer_stays_blocked(tmp_path):
@@ -75,6 +77,16 @@ def test_m0_without_gate_answer_stays_blocked(tmp_path):
     assert result.status == "blocked"
     assert result.pending_gate.id == "gate_brief"
     assert provider.calls == 2
+
+    treatment = asyncio.run(
+        executor.run(
+            "studio:workflow/m0-conversation",
+            {"discussion": "On parle d'un phare."},
+            answers={"gate_brief": "continue"},
+        )
+    )
+    assert treatment.status == "blocked"
+    assert treatment.pending_gate.id == "gate_treatment"
 
 
 def test_cli_validate_accepts_shipped_catalog(tmp_path):

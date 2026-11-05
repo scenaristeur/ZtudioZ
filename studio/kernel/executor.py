@@ -82,6 +82,8 @@ class Executor:
         self.image = image
         self.video = video
         self.context = dict(context or {})
+        self.feedback: dict[str, str] = {}
+        self._active_feedback: str | None = None
         self._global = asyncio.Semaphore(max_parallel)
         self._artifacts: dict[str, str] = {}
         self._unit_costs: dict[str, float] = {}
@@ -94,8 +96,11 @@ class Executor:
         inputs: dict[str, Any] | None = None,
         answers: dict[str, str] | None = None,
         run_id: str | None = None,
+        feedback: dict[str, str] | None = None,
     ) -> RunResult:
         """Execute ou reprend un workflow jusqu'a completion, gate ou echec."""
+        self.feedback = dict(feedback or {})
+        self._active_feedback = None
         inputs = {**self.context, **dict(inputs or {})}
         workflow = self.registry.workflow(workflow_id)
         graph = self.registry.graph(workflow_id)
@@ -146,7 +151,10 @@ class Executor:
                 for gate in gates:
                     verdict = self._exec_gate(gate, run_id, merged)
                     if verdict == "retry":
-                        await self._retry_gate(gate, graph, inputs, values, completed, run_id)
+                        try:
+                            await self._retry_gate(gate, graph, inputs, values, completed, run_id)
+                        finally:
+                            self._active_feedback = None
                         self.journal.append("run_finished", run=run_id, status="blocked")
                         result = self._result("blocked", run_id, graph, values, completed)
                         result.pending_gate = GateRequest(gate.id, gate.question or "", gate.options)
@@ -218,7 +226,11 @@ class Executor:
         if answer is None:
             return "blocked"
         if answer == "retry":
-            self.journal.append("gate_retry", run=run_id, node=node.id)
+            feedback = self.feedback.get(node.id, "")
+            self._active_feedback = feedback or None
+            self.journal.append(
+                "gate_retry", run=run_id, node=node.id, feedback=feedback
+            )
             return "retry"
         if node.options and answer not in node.options:
             raise GateError(f"reponse invalide pour {node.id}: {answer}")
@@ -395,6 +407,8 @@ class Executor:
                 scope[dep] = value
         if extra:
             scope.update(extra)
+        if self._active_feedback:
+            scope["feedback"] = self._active_feedback
         return scope
 
     async def _exec_agent(

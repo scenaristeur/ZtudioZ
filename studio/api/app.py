@@ -109,6 +109,9 @@ def create_app(projects_root: str | Path, registry=None) -> Starlette:
         if not isinstance(body, dict):
             raise HTTPException(400, "corps JSON invalide")
         answer = body.get("answer")
+        feedback = body.get("feedback", "")
+        if not isinstance(feedback, str):
+            raise HTTPException(400, "feedback invalide")
 
         events = service.events(project)
         gate = service.pending_gate(events, run_id)
@@ -131,7 +134,7 @@ def create_app(projects_root: str | Path, registry=None) -> Starlette:
 
         async def resume():
             try:
-                await executor.run(workflow, inputs)
+                await executor.run(workflow, inputs, feedback={gate_id: feedback})
             except Exception:
                 logger.exception("run %s: reprise de gate en echec", run_id)
             finally:
@@ -141,7 +144,13 @@ def create_app(projects_root: str | Path, registry=None) -> Starlette:
         tasks.add(task)
         task.add_done_callback(tasks.discard)
         return JSONResponse(
-            {"run_id": run_id, "gate": gate_id, "answer": answer, "status": "started"},
+            {
+                "run_id": run_id,
+                "gate": gate_id,
+                "answer": answer,
+                "feedback": feedback,
+                "status": "started",
+            },
             status_code=202,
         )
 

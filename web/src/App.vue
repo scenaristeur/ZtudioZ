@@ -126,14 +126,34 @@
           <p>{{ graph.gate.question }}</p>
           <div class="gate-actions">
             <button
-              v-for="option in graph.gate.options"
+              v-for="option in graph.gate.options.filter((o) => o !== 'retry')"
               :key="option"
               :class="option"
               :disabled="busy"
               @click="answer(option)"
             >
-              {{ option }}
+              {{ optionLabel(option) }}
             </button>
+          </div>
+
+          <div v-if="graph.gate.options.includes('retry')" class="gate-feedback">
+            <label for="gate-feedback">Corriger et creer une nouvelle version</label>
+            <textarea
+              id="gate-feedback"
+              v-model="feedback"
+              rows="4"
+              placeholder="Ce qui doit changer : rythme, nombre de plans, fin, ton..."
+            ></textarea>
+            <button
+              class="retry"
+              :disabled="busy || !feedback.trim()"
+              @click="answer('retry')"
+            >
+              Creer une nouvelle version
+            </button>
+            <span class="muted small">
+              La correction relance l'etape precedente sans repartir de zero.
+            </span>
           </div>
         </section>
 
@@ -165,6 +185,7 @@ const graph = ref(null)
 const journal = ref([])
 const error = ref('')
 const busy = ref(false)
+const feedback = ref('')
 let timer = null
 
 const runs = computed(() => project.value?.runs || [])
@@ -254,13 +275,24 @@ async function answer(option) {
   if (!graph.value?.gate) return
   busy.value = true
   try {
-    await api.answer(slug.value, selectedRun.value, graph.value.gate.id, option)
+    await api.answer(
+      slug.value,
+      selectedRun.value,
+      graph.value.gate.id,
+      option,
+      option === 'retry' ? feedback.value : '',
+    )
+    feedback.value = ''
     await load()
   } catch (exc) {
     error.value = exc.message
   } finally {
     busy.value = false
   }
+}
+
+function optionLabel(option) {
+  return { continue: 'Continuer', retry: 'Nouvelle version', stop: 'Arreter' }[option] || option
 }
 
 onMounted(() => {

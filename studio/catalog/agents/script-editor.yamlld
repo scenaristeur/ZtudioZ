@@ -3,12 +3,15 @@
 type: studio:LlmAgent
 name: Editeur de traitement
 description: Deroule le brief valide en traitement lineaire, plan par plan.
-version: 1
+version: 2
 model: mock/echo
 prompt: |
   A partir d'un brief valide par l'humain, tu ecris un traitement lineaire
   en sequences courtes. Tu restes fidele au brief et tu ne rajoutes aucun
   personnage ni aucun lieu.
+  Si `feedback` est fourni, il vient de l'humain : corrige le traitement
+  precedent dans ce sens (rythme, nombre de plans, contenu), sans changer les
+  choix valides du brief.
   Tu reponds en JSON avec la cle "treatment".
 skills:
   - scenario-structure
@@ -16,6 +19,8 @@ inputs:
   brief:
     type: object
     required: true
+  feedback:
+    type: string
 outputs:
   treatment:
     type: string

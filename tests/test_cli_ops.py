@@ -47,6 +47,7 @@ def test_sigint_interrupts_then_resume_completes(tmp_path):
     resumed = cli(
         runs, "run", "studio:workflow/m0-conversation",
         "--input", DISCUSSION, "--answer", "gate_brief=continue",
+        "--answer", "gate_treatment=continue",
     )
     assert resumed.returncode == 0, resumed.stdout + resumed.stderr
 
@@ -56,6 +57,7 @@ def test_cli_invalidate_purges_downstream_cache(tmp_path):
     completed = cli(
         runs, "run", "studio:workflow/m0-conversation",
         "--input", DISCUSSION, "--answer", "gate_brief=continue",
+        "--answer", "gate_treatment=continue",
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
 

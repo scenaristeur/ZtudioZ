@@ -116,6 +116,7 @@ def cmd_run(args) -> int:
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
     inputs = json.loads(args.input)
     answers = dict(item.split("=", 1) for item in args.answer)
+    feedback = dict(item.split("=", 1) for item in args.feedback)
     project = _load_project(args)
     runs = _runs_dir(args, project)
 
@@ -164,7 +165,9 @@ def cmd_run(args) -> int:
         context=project.context if project is not None else None,
     )
     try:
-        result = asyncio.run(executor.run(args.workflow, inputs))
+        result = asyncio.run(
+            executor.run(args.workflow, inputs, feedback=feedback)
+        )
     except KeyboardInterrupt:
         # D13 : l'interruption ne casse rien — le journal append-only permet de reprendre
         print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
@@ -271,6 +274,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("workflow")
     run.add_argument("--input", default="{}")
     run.add_argument("--answer", action="append", default=[])
+    run.add_argument("--feedback", action="append", default=[],
+                     help="feedback de correction pour une gate retry (gate=texte)")
     run.add_argument("--provider", default=None, choices=["mock", "openai"])
     run.add_argument("--image-provider", default=None, choices=["mock", "openai", "pollinations"])
     run.add_argument("--video-provider", default=None, choices=["mock", "pollinations"])

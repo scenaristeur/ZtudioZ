@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 200 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 203 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -167,7 +167,7 @@ studio/
   web/             UI Vue 3 + Vite pilotee par le graphe (dist servi par l'API)
   cli.py           run | journal | validate | invalidate | serve | --skills-root | --project
   project.py       studio.yaml -> providers + contexte + racine artefacts/journal
-tests/             34 fichiers, 200 tests
+tests/             35 fichiers, 203 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -645,6 +645,13 @@ Tests ajoutés pour D29 / D23 / D26 — **+11 tests, 197 verts** :
 | `test_vision.py` (D23) | 5 | `continuity-checker` utilise `gemma-4-31b-it`, déclare `reference`, reçoit les 2 binaires (pas seulement des refs), le contenu est un data URI, une réponse enrobée est parsée |
 | `test_freeform.py` (D26) | 4 | le prompt exige une entrée par contrainte freeform (`text`, `respected`, `evidence`), le schéma l'accepte, refuse `ok=true` avec `respected=false`, le verdict structuré est produit et validé |
 
+Tests ajoutés pour les gates corrigeables (feedback) — **+3 tests, 203 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_gate_feedback.py` | 2 | `retry` + feedback relance l'étape avec la correction et produit une nouvelle version ; un retry sans feedback ne l'invente pas |
+| `test_api.py` | 1 | `POST .../gates/{id}` accepte `{"answer":"retry","feedback":"..."}` et le journal porte `gate_retry.feedback` |
+
 Tests ajoutés pour le serveur local (`.env` + erreurs visibles) — **+3 tests, 200 verts** :
 
 | Test | Tests | Garantie |
@@ -718,7 +725,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 200 passed
+.venv/bin/python -m pytest tests/      # 203 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -801,6 +808,7 @@ condition de :
 | 2026-11-05 | D23 | **Vision réelle via Albert.** Le provider accepte `images`, l'exécuteur charge les binaires des agents qui déclarent `images`, le contenu part en `image_url` (data URI). `continuity-checker` passe à `gemma-4-31b-it` (v8), déclare `reference`, ne prétend plus être aveugle. 5 tests. **Vérifié en réel** : description correcte d'un JPEG de `feu-follet-v2` | assistant |
 | 2026-11-05 | D23 | **Choix humain du modèle vision** : Mistral-Small-3.2 essayé puis bascule immédiate sur `gemma-4-31b-it` (Albert, v8). Vérifié en réel : description correcte d'un JPEG de `feu-follet-v2` | humain + assistant |
 | 2026-11-05 | run réel | **Échec `continue` dans l'UI** : le serveur avait été lancé sans `.env`, donc `OPENAI_API_KEY` absente au nœud `treatment` (`cle absente`). Corrigé : `studio serve` charge `.env` sans écraser l'environnement, et l'API expose l'erreur du run (affichée dans l'UI). Reprise du run `6a6c6fb9` : `treatment` produit, statut `completed` | assistant |
+| 2026-11-05 | gates | **Correction humaine aux gates** : `gate_treatment` ajoutée après le traitement M0 ; `retry` peut porter un `feedback`, injecté dans l'étape rejouée (`_active_feedback`) et journalisé (`gate_retry.feedback`). `brief-synthesizer` et `script-editor` v2 déclarent `feedback` et corrigent la version précédente. UI : zone de texte + « Créer une nouvelle version ». Vérifié en réel : « réduis à 3 plans » → nouveau traitement à 3 plans | assistant + humain |
 | 2026-11-05 | D26 | **Freeform vérifiable.** Le verdict porte `constraints` (`text`, `respected`, `evidence`) ; le schéma interdit `ok=true` si une contrainte est `respected=false`. Prompt v6 exige une entrée par contrainte freeform. 4 tests. **Vérifié en réel** : Albert rend `ok=false` argumenté et `{"text":"pas de dialogue","respected":true,"evidence":"aucune bulle..."}` | assistant |
 
 ---

@@ -51,7 +51,8 @@ def events(root):
 def m0(root, *extra):
     return cli(
         root, "run", "studio:workflow/m0-conversation",
-        "--input", json.dumps({"discussion": DISCUSSION}), *extra,
+        "--input", json.dumps({"discussion": DISCUSSION}),
+        "--answer", "gate_treatment=continue", *extra,
     )
 
 

@@ -246,6 +246,43 @@ def test_summarize_expose_l_erreur_du_dernier_echec():
     assert run["error"] == "cle absente"
 
 
+def test_api_retry_avec_feedback_relance_l_etape(tmp_path):
+    root, path = project(tmp_path)
+    blocked = asyncio.run(
+        make_executor(path).run(
+            "studio:workflow/m0-conversation", {"discussion": "un phare, une voix"}
+        )
+    )
+    assert blocked.pending_gate.id == "gate_brief"
+
+    async def scenario():
+        app = create_app(root)
+        status, body = await call(
+            app,
+            "POST",
+            f"/api/projects/demo/runs/{blocked.run_id}/gates/gate_brief",
+            {"answer": "retry", "feedback": "plus sombre, moins de dialogue"},
+        )
+        assert status == 202, body
+
+        retry = []
+        for _ in range(200):
+            status, journal = await get_json(
+                app, "/api/projects/demo/journal"
+            )
+            retry = [
+                e
+                for e in journal["events"]
+                if e["type"] == "gate_retry" and e.get("run") == blocked.run_id
+            ]
+            if retry:
+                break
+            await asyncio.sleep(0.01)
+        assert retry[-1]["feedback"] == "plus sombre, moins de dialogue"
+
+    asyncio.run(scenario())
+
+
 def test_api_sert_l_ui_si_dist_existe(tmp_path):
     root, _ = project(tmp_path)
     dist = STUDIO_ROOT.parent / "web" / "dist"

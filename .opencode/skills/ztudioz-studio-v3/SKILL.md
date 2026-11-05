@@ -130,6 +130,17 @@ python -m studio.cli --runs $RUNS run studio:workflow/m0-conversation \
   --provider openai --input '{"discussion": "<identique>"}' --answer gate_brief=continue
 # retry = refabriquer le brief ; stop = arrêter le run
 ```
+Après le brief, le run s'arrête à `gate_treatment` : même choix (`continue` / `retry` /
+`stop`). Pour une correction, `retry` accepte un feedback :
+```bash
+python -m studio.cli --runs $RUNS run studio:workflow/m0-conversation \
+  --input '{"discussion": "<identique>"}' \
+  --answer gate_treatment=retry \
+  --feedback "gate_treatment=reduis a 3 plans, garde la fin silencieuse"
+```
+Le feedback est injecté dans l'étape rejouée et journalisé (`gate_retry.feedback`) ; il
+produit une **nouvelle version**, pas une correction en place. Dans l'UI, c'est la zone de
+texte sous la gate + « Créer une nouvelle version ».
 Le `--input` doit être **identique** (le run_id en dérive) ; les nœuds déjà faits ne sont
 jamais repayés (cache + journal). Récupère le **brief complet** (`outputs.brief`) : il doit
 repartir avec toi jusqu'à M1, ce n'est pas un artefact mort.
