@@ -10,11 +10,19 @@ from pathlib import Path
 
 from .kernel.artifacts import ArtifactStore
 from .kernel.context import short_iri
-from .kernel.errors import LoadError
+from .kernel.errors import LoadError, StudioError
 from .kernel.executor import Executor
 from .kernel.journal import Journal
 from .kernel.registry import STUDIO_ROOT, load_registry
-from .project import Project, ProjectError, prepare_inputs
+from .project import (
+    Project,
+    ProjectError,
+    latest_run,
+    missing_inputs,
+    next_step,
+    pending_gate,
+    prepare_inputs,
+)
 from .tools.images import (
     MockImageProvider,
     OpenAICompatImageProvider,
@@ -91,6 +99,93 @@ def _runs_dir(args, project: Project | None) -> Path:
     return project.root if project is not None else Path(args.runs)
 
 
+def _parse_input(raw: str) -> dict:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise StudioError(f"--input JSON invalide: {exc}") from exc
+    if not isinstance(value, dict):
+        raise StudioError("--input doit etre un objet JSON")
+    return value
+
+
+def _parse_pairs(values: list[str], option: str) -> dict[str, str]:
+    pairs: dict[str, str] = {}
+    for item in values:
+        if "=" not in item:
+            raise StudioError(f"{option} attend nom=valeur, recu: {item!r}")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise StudioError(f"{option} a une cle vide: {item!r}")
+        pairs[key] = value
+    return pairs
+
+
+def _load_project_or_fail(args) -> Project:
+    project = _load_project(args)
+    if project is None:
+        raise StudioError("cette commande exige --project <dossier>")
+    return project
+
+
+def _print_next(project: Project, registry) -> dict | None:
+    step = next_step(project, registry)
+    if step is None:
+        current = latest_run(project)
+        if current is None:
+            print("aucun run dans ce projet")
+        else:
+            print(f"aucun palier suivant (dernier run: {current['status']})")
+        return None
+
+    print(f"palier suivant: {short_iri(step['workflow'])}")
+    print(f"nom: {step['label']}")
+    print(f"depuis: {short_iri(step['from'])} ({step['run_id']})")
+    print(f"herite: {', '.join(step['inherited']) or '-'}")
+    if step["missing"]:
+        print(f"manquant: {', '.join(step['missing'])}")
+        example = json.dumps({name: "<valeur>" for name in step["missing"]}, ensure_ascii=False)
+        print(f"relancer avec --input '{example}'")
+    else:
+        print("pret a lancer")
+    return step
+
+
+def cmd_next(args) -> int:
+    project = _load_project_or_fail(args)
+    registry = load_registry(args.root, extra_skill_roots=args.skills_root)
+    _print_next(project, registry)
+    return 0
+
+
+def cmd_status(args) -> int:
+    project = _load_project_or_fail(args)
+    registry = load_registry(args.root, extra_skill_roots=args.skills_root)
+    current = latest_run(project)
+    if current is None:
+        print(f"projet: {project.name}")
+        print("aucun run")
+        return 0
+
+    state = Journal(project.journal).state(current["run_id"])
+    print(f"projet: {project.name}")
+    print(f"run: {current['run_id']}")
+    print(f"workflow: {short_iri(current['workflow'])}")
+    print(f"statut: {current['status']}")
+    print(f"cout journalise: {state.cost:.4f}")
+    print(f"noeuds termines: {', '.join(sorted(state.completed)) or '-'}")
+    if current["status"] == "blocked":
+        # Le journal est la source : on relit la derniere gate non repondue.
+        gate = pending_gate(Journal(project.journal).events(), current["run_id"])
+        if gate:
+            print(f"gate: {gate['id']}")
+            print(f"question: {gate['question']}")
+            print(f"options: {', '.join(gate['options'])}")
+    _print_next(project, registry)
+    return 0
+
+
 def cmd_validate(args) -> int:
     try:
         registry = load_registry(args.root, extra_skill_roots=args.skills_root)
@@ -114,18 +209,30 @@ def cmd_validate(args) -> int:
 
 def cmd_run(args) -> int:
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
-    inputs = json.loads(args.input)
-    answers = dict(item.split("=", 1) for item in args.answer)
-    feedback = dict(item.split("=", 1) for item in args.feedback)
+    explicit = _parse_input(args.input)
+    answers = _parse_pairs(args.answer, "--answer")
+    feedback = _parse_pairs(args.feedback, "--feedback")
     project = _load_project(args)
     runs = _runs_dir(args, project)
+    workflow = registry.workflow(args.workflow)
+    graph = registry.graph(args.workflow)
 
-    explicit = dict(inputs)
     if project is not None:
-        workflow = registry.workflow(args.workflow)
         inputs, inherited = prepare_inputs(project, workflow, explicit)
         if inherited:
             print(f"herite du journal: {', '.join(inherited)}")
+    else:
+        inputs = explicit
+
+    missing = missing_inputs(workflow, graph, inputs)
+    if missing:
+        print(f"ERREUR: entrees manquantes: {', '.join(missing)}", file=sys.stderr)
+        return 1
+    if feedback and not any(value == "retry" for value in answers.values()):
+        print(
+            "avertissement: --feedback ignore sans --answer <gate>=retry",
+            file=sys.stderr,
+        )
 
     if project is not None:
         provider = _build_provider(args.provider) if args.provider else project.build("llm")
@@ -162,9 +269,6 @@ def cmd_run(args) -> int:
         # D13 : l'interruption ne casse rien — le journal append-only permet de reprendre
         print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
         return 130
-    except LoadError as exc:
-        print(f"ERREUR: {exc}", file=sys.stderr)
-        return 1
 
     print(f"run: {result.run_id}")
     print(f"statut: {result.status}")
@@ -176,6 +280,7 @@ def cmd_run(args) -> int:
         print(f"question: {gate.question}")
         print(f"options: {', '.join(gate.options)}")
         print("relancer avec --answer " + gate.id + "=continue")
+        print("ou corriger avec --answer " + gate.id + "=retry --feedback \"" + gate.id + "=...\"")
         return 3
     if result.status == "failed":
         print(f"erreur: {result.error}", file=sys.stderr)
@@ -204,6 +309,8 @@ def cmd_journal(args) -> int:
     project = _load_project(args)
     runs = _runs_dir(args, project)
     for event in Journal(runs / "journal.jsonl").events():
+        if args.run and event.get("run") != args.run:
+            continue
         print(json.dumps(event, ensure_ascii=False))
     return 0
 
@@ -272,7 +379,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=cmd_run)
 
     journal = sub.add_parser("journal", help="affiche le journal")
+    journal.add_argument("--run", default=None, help="filtre sur un run_id")
     journal.set_defaults(func=cmd_journal)
+
+    next_cmd = sub.add_parser("next", help="affiche le palier suivant du projet")
+    next_cmd.set_defaults(func=cmd_next)
+
+    status = sub.add_parser("status", help="etat du dernier run et palier suivant")
+    status.set_defaults(func=cmd_status)
 
     serve = sub.add_parser("serve", help="sert l'API HTTP (lecture + reponse aux gates)")
     serve.add_argument("--projects", default="runs", help="racine des projets")
@@ -290,7 +404,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except BrokenPipeError:
+        return 0
+    except (StudioError, ValueError, OSError) as exc:
+        print(f"ERREUR: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

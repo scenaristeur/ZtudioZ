@@ -265,7 +265,14 @@ class Executor:
             for unit, unit_hash in list(self._artifacts.items()):
                 if unit.startswith(f"{dep}#"):
                     targets |= self.store.invalidate(unit_hash)
-        affected = [nid for nid, hash_ in self._artifacts.items() if hash_ in targets]
+        affected = [
+            nid
+            for nid, hash_ in self._artifacts.items()
+            if hash_ in targets
+            and not (nid in graph.nodes and graph.node(nid).is_gate)
+        ]
+        # Une gate deja franchie reste franchie : corriger en aval ne doit pas
+        # reposer les validations humaines precedentes (gate_images -> gate_verdict).
         self.journal.append(
             "nodes_invalidated",
             run=run_id,

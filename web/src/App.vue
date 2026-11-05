@@ -229,9 +229,10 @@ const canLaunchNext = computed(() => {
   if (!next.value) return false
   return next.value.missing.every((key) => (nextInputs.value[key] || '').trim())
 })
-const verdictArtifact = computed(
-  () => (graph.value?.nodes || []).find((node) => node.id === 'verdict')?.artifact || null,
-)
+const verdictArtifact = computed(() => {
+  if (graph.value?.gate?.id !== 'gate_verdict') return null
+  return (graph.value?.nodes || []).find((node) => node.id === 'verdict')?.artifact || null
+})
 const retryLabel = computed(() =>
   graph.value?.gate?.id === 'gate_verdict'
     ? 'Recommencer les images avec cette correction'

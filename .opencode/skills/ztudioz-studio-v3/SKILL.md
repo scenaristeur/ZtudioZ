@@ -46,12 +46,20 @@ par ce que son workflow déclare. Exemple M0 → M1 :
 
 ```bash
 python -m studio.cli --project runs/<slug> run studio:workflow/m0-conversation \
-  --input '{"discussion": "<discussion>"}' --answer gate_brief=continue
+  --input '{"discussion": "<discussion>"}' \
+  --answer gate_brief=continue --answer gate_treatment=continue
 
 # treatment + brief viennent du journal ; seule la référence est humaine
+python -m studio.cli --project runs/<slug> next
 python -m studio.cli --project runs/<slug> run studio:workflow/m1-scene \
-  --input '{"reference": "<ancre visuelle>"}' --answer gate_images=continue
+  --input '{"reference": "<ancre visuelle>"}' \
+  --answer gate_images=continue --answer gate_verdict=continue
 ```
+
+`next` affiche le palier suivant, ce qui est hérité et ce qui manque. `status` montre le
+dernier run, son coût, ses nœuds et la gate en attente. Le CLI vérifie les entrées requises
+**avant** tout appel : une entrée manquante ou un JSON invalide sort en erreur propre, sans
+traceback.
 
 Le CLI affiche `herite du journal: ...`. Un run **bloqué** à une gate ne nourrit pas la
 mémoire : seule une validation humaine terminée compte. L'ordre est

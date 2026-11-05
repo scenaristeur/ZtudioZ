@@ -120,3 +120,12 @@ def test_gate_verdict_retry_rejoue_images_et_verdict(tmp_path):
         [r for r in provider.records if r["agent"].endswith("continuity-checker")]
     ) > verdicts_before
     assert "l'image 2 doit montrer les machines" in image_prompts(image)[-1]
+
+    finished = asyncio.run(
+        executor.run(
+            "studio:workflow/m1-scene",
+            INPUTS,
+            answers={"gate_verdict": "continue"},
+        )
+    )
+    assert finished.status == "completed"

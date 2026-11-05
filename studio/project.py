@@ -190,6 +190,88 @@ def prepare_inputs(
     return inputs, inherited
 
 
+def missing_inputs(workflow: dict, graph, inputs: dict) -> list[str]:
+    """Entrees requises absentes, inputs et contexte confondus."""
+    missing = []
+    for name, spec in (workflow.get("inputs") or {}).items():
+        if isinstance(spec, dict) and spec.get("required") and name not in inputs:
+            missing.append(name)
+    for name, required in graph.context.items():
+        if required and name not in inputs:
+            missing.append(name)
+    return missing
+
+
+def latest_run(project: "Project") -> dict | None:
+    """Dernier run journalise : id, workflow, statut."""
+    from .kernel.journal import Journal
+
+    events = Journal(project.journal).events()
+    current: dict | None = None
+    for event in events:
+        if event.get("type") == "run_started":
+            current = {
+                "run_id": event.get("run"),
+                "workflow": event.get("workflow"),
+                "status": "running",
+                "started": event.get("ts"),
+            }
+        elif current and event.get("run") == current["run_id"] and event.get("type") == "run_finished":
+            current["status"] = event.get("status")
+    return current
+
+
+def pending_gate(events: list[dict], run_id: str) -> dict | None:
+    """Derniere gate non repondue d'un run, ou None."""
+    gate: dict | None = None
+    for event in events:
+        if event.get("run") != run_id:
+            continue
+        kind = event.get("type")
+        if kind == "gate_asked":
+            gate = {
+                "id": event.get("node"),
+                "question": event.get("question"),
+                "options": list(event.get("options") or []),
+            }
+        elif kind == "gate_answered" and gate and gate["id"] == event.get("node"):
+            gate = None
+        elif kind == "run_finished" and event.get("status") != "blocked":
+            gate = None
+    return gate
+
+
+NEXT_WORKFLOWS = {
+    "workflow/m0-conversation": "studio:workflow/m1-scene",
+    "workflow/m1-scene": "studio:workflow/m2-video",
+}
+
+
+def next_step(project: "Project", registry) -> dict | None:
+    """Palier suivant apres le dernier run termine, avec ses entrees pretes."""
+    current = latest_run(project)
+    if current is None or current["status"] != "completed" or not current.get("workflow"):
+        return None
+    target = NEXT_WORKFLOWS.get(current["workflow"].split("#")[-1])
+    if target is None:
+        return None
+
+    workflow = registry.workflow(target)
+    graph = registry.graph(target)
+    inputs, inherited = prepare_inputs(project, workflow, {})
+    missing = missing_inputs(workflow, graph, inputs)
+    return {
+        "run_id": current["run_id"],
+        "from": current["workflow"],
+        "workflow": target,
+        "label": workflow.get("name") or target,
+        "inputs": inputs,
+        "inherited": inherited,
+        "missing": missing,
+        "ready": not missing,
+    }
+
+
 def _read(path: Path) -> dict:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
