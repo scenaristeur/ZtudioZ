@@ -260,6 +260,11 @@ class Executor:
             hash_ = self._artifacts.get(dep)
             if hash_:
                 targets |= self.store.invalidate(hash_)
+            # Un foreach produit des unites `dep#i` : leurs caches doivent tomber
+            # aussi, sinon le noeud agrege se rejoue mais chaque item est un cache hit.
+            for unit, unit_hash in list(self._artifacts.items()):
+                if unit.startswith(f"{dep}#"):
+                    targets |= self.store.invalidate(unit_hash)
         affected = [nid for nid, hash_ in self._artifacts.items() if hash_ in targets]
         self.journal.append(
             "nodes_invalidated",
@@ -514,7 +519,7 @@ class Executor:
                 agent_id=agent["@id"],
                 model=agent.get("model", ""),
                 system=self._system(agent),
-                prompt=self._text_prompt(resolved),
+                prompt=self._image_prompt(resolved),
                 reference=reference,
             )
 
@@ -909,6 +914,29 @@ class Executor:
             if isinstance(value, str):
                 return value
         return json.dumps(resolved, ensure_ascii=False, sort_keys=True)
+
+    @staticmethod
+    def _image_prompt(resolved: dict[str, Any]) -> str:
+        """Prompt image : le plan, plus l'ancre visuelle, le brief et la correction."""
+        base = Executor._text_prompt(resolved)
+        extras: list[str] = []
+
+        reference = resolved.get("reference")
+        if isinstance(reference, str) and reference.strip() and reference.strip() != base:
+            extras.append(f"Reference visuelle: {reference.strip()}")
+
+        brief = resolved.get("brief")
+        if isinstance(brief, dict):
+            constraints = brief.get("constraints") or {}
+            freeform = constraints.get("freeform") or []
+            if freeform:
+                extras.append("Contraintes du brief: " + "; ".join(map(str, freeform)))
+
+        feedback = resolved.get("feedback")
+        if isinstance(feedback, str) and feedback.strip():
+            extras.append(f"Correction demandee: {feedback.strip()}")
+
+        return ". ".join([base, *extras]) if extras else base
 
     def _resolve(self, expression: str, scope: dict[str, Any]) -> Any:
         if not expression.startswith("${") or not expression.endswith("}"):

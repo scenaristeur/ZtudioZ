@@ -107,6 +107,9 @@ export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
   `mock/*` des agents cèdent la place au modèle opérateur).
 - Images : `--image-provider pollinations` (gratuit : 1 image / 45 s / IP + quota global
   partagé ; l'adaptateur honore les délais annoncés, un run M1 complet prend ~4-5 min).
+  **`mock` produit des PNG unis de 8×8** : c'est un placeholder de test, jamais un rendu.
+  Le prompt image porte le plan, l'ancre `reference` et les contraintes `freeform` du brief ;
+  un `retry` de `gate_images` avec feedback regénère réellement les images.
 - Vidéos : `--video-provider pollinations` (`wan-fast` défaut, ~0,01 $/s ; `grok-video-pro`
   ~0,05 $/s via `STUDIO_VIDEO_MODEL`). Facturé à la seconde, budget refusé avant l'appel.
 - Vision : le `continuity-checker` utilise `gemma-4-31b-it` (Albert) et reçoit les **pixels**

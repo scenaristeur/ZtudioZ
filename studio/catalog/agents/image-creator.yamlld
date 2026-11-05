@@ -3,11 +3,12 @@
 type: studio:ImageAgent
 name: Createur d'images
 description: Illustre un plan donne dans la coherence de la planche de reference.
-version: 1
+version: 2
 model: mock-image/png
 prompt: |
   Tu genere l'image d'un plan a partir de son prompt visuel.
-  Tu respectes la planche de reference : meme decor, meme lumiere, meme palette.
+  Tu respectes la planche de reference et les contraintes du brief : meme
+  decor, meme lumiere, meme palette, meme epoque.
 inputs:
   item:
     type: object
@@ -15,6 +16,12 @@ inputs:
   reference_image:
     type: object
     required: true
+  reference:
+    type: string
+  brief:
+    type: object
+  feedback:
+    type: string
 outputs:
   image:
     type: object
