@@ -72,6 +72,11 @@
                   :src="node(id).artifact.url"
                   controls
                 />
+                <JsonArtifact
+                  v-else-if="isJson(node(id).artifact)"
+                  :url="node(id).artifact.url"
+                  :label="`voir ${id} (JSON)`"
+                />
                 <a v-else :href="node(id).artifact.url" target="_blank">
                   {{ node(id).artifact.hash }}
                 </a>
@@ -114,6 +119,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from './api'
+import JsonArtifact from './JsonArtifact.vue'
 
 const projects = ref([])
 const slug = ref('')
@@ -149,6 +155,10 @@ function isImage(artifact) {
 
 function isVideo(artifact) {
   return (artifact.media_type || '').startsWith('video/')
+}
+
+function isJson(artifact) {
+  return (artifact.media_type || '').includes('json')
 }
 
 function shortWorkflow(workflow) {
