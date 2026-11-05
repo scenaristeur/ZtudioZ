@@ -1,6 +1,6 @@
 """D23 — le controleur de continuite voit les pixels, pas seulement des refs.
 
-Albert expose `mistralai/Mistral-Small-3.2-24B-Instruct-2506` en multimodal. Le noyau charge les binaires des
+Albert expose `gemma-4-31b-it` en multimodal. Le noyau charge les binaires des
 images declarees en entree et le provider les envoie en `image_url` (data URI).
 """
 
@@ -48,7 +48,7 @@ def run_m1(tmp_path):
 def test_le_controleur_utilise_le_modele_vision_d_albert():
     agent = load_registry(STUDIO_ROOT).agent("studio:agent/continuity-checker")
 
-    assert agent["model"] == "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
+    assert agent["model"] == "gemma-4-31b-it"
     assert "reference" in (agent.get("inputs") or {})
     assert "pixels" in agent["prompt"]
     assert "Tu ne vois pas les pixels" not in agent["prompt"]

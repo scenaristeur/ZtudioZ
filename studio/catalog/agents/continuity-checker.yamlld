@@ -3,8 +3,8 @@
 type: studio:LlmAgent
 name: Controleur de continuite
 description: Verifie visuellement chaque plan et le respect du brief par les images.
-version: 7
-model: mistralai/Mistral-Small-3.2-24B-Instruct-2506
+version: 8
+model: gemma-4-31b-it
 prompt: |
   Tu recois les plans annonces, les images produites (les pixels eux-memes),
   la reference textuelle de l'auteur et, si l'auteur en a fourni un, le brief

@@ -13,7 +13,7 @@
 > les workflows héritent du brief sans le redéclarer, le journal d'un run terminé nourrit le
 > palier suivant, une API Starlette expose projets, runs, journal, artefacts et gates, et une
 > UI Vue 3 pilotée par le graphe affiche l'état du run et répond aux gates. **D29, D23 et
-> D26 sont clos** : nœuds stricts, contrôleur multimodal Albert (`mistralai/Mistral-Small-3.2-24B-Instruct-2506`), contraintes
+> D26 sont clos** : nœuds stricts, contrôleur multimodal Albert (`gemma-4-31b-it`), contraintes
 > freeform jugées et cohérence `ok`/`constraints` verrouillée par schéma.
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
@@ -642,10 +642,10 @@ Tests ajoutés pour D29 / D23 / D26 — **+11 tests, 197 verts** :
 |---|---|---|
 | `test_graph.py` (D29) | 1 | un nœud qui déclare `inputs:` ou `outputs:` est refusé au chargement (fail fast) |
 | `test_m1_e2e.py` (D29) | 1 | `reference-keeper` sort `reference_image`, `image-creator` le consomme ; l'ancre texte `reference` n'est plus écrasée (le test de lignée existant est adapté) |
-| `test_vision.py` (D23) | 5 | `continuity-checker` utilise `mistralai/Mistral-Small-3.2-24B-Instruct-2506`, déclare `reference`, reçoit les 2 binaires (pas seulement des refs), le contenu est un data URI, une réponse enrobée est parsée |
+| `test_vision.py` (D23) | 5 | `continuity-checker` utilise `gemma-4-31b-it`, déclare `reference`, reçoit les 2 binaires (pas seulement des refs), le contenu est un data URI, une réponse enrobée est parsée |
 | `test_freeform.py` (D26) | 4 | le prompt exige une entrée par contrainte freeform (`text`, `respected`, `evidence`), le schéma l'accepte, refuse `ok=true` avec `respected=false`, le verdict structuré est produit et validé |
 
-Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `mistralai/Mistral-Small-3.2-24B-Instruct-2506` décrit bien l'image
+Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `gemma-4-31b-it` décrit bien l'image
 (« paysage nocturne brumeux, sapins, ciel étoilé »), puis rend un verdict `ok=false` argumenté
 avec `constraints: [{text: "pas de dialogue", respected: true, evidence: "aucune bulle..."}]`.
 Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
@@ -791,8 +791,8 @@ condition de :
 | 2026-11-05 | M3.4 | **API Starlette** : 6 tests rouges d'abord, **184 verts**. `studio serve` expose projets, détail, journal, runs, artefacts et `POST .../gates/{id}` ; la reprise tourne en tâche de fond et le client suit le journal. Garde-fous : slug sans traversée, artefact hash-only, gate en attente obligatoire (409), réponse dans les options (400), un run par projet. Démo : deux gates répondues en HTTP → `completed`, 6 artefacts | assistant |
 | 2026-11-05 | M3.5 | **UI Vue 3 pilotée par le graphe** : 2 tests rouges d'abord, **186 verts**. `GET .../graph` expose niveaux/nœuds/gates/artefacts, `studio serve` monte `web/dist`. Une seule vue : projets, runs, DAG en colonnes, aperçu image/vidéo, panneau de gate, journal. Vite + Vue, build 71 Ko, polling 2 s. Démo : `GET /` sert l'index, le graphe d'un run bloqué expose `gate_clips` | assistant |
 | 2026-11-05 | D29 | **Tranché : fail fast.** `inputs:`/`outputs:` retirés de `NODE_KEYS` (un nœud qui les déclare est refusé au chargement). Collision supprimée : `reference-keeper` sort `reference_image`, `image-creator` le consomme, l'ancre texte `reference` reste dans la portée et arrive au contrôleur. 2 tests rouges, **197 verts** | assistant |
-| 2026-11-05 | D23 | **Vision réelle via Albert.** Le provider accepte `images`, l'exécuteur charge les binaires des agents qui déclarent `images`, le contenu part en `image_url` (data URI). `continuity-checker` passe à `mistralai/Mistral-Small-3.2-24B-Instruct-2506` (v7), déclare `reference`, ne prétend plus être aveugle. 5 tests. **Vérifié en réel** : description correcte d'un JPEG de `feu-follet-v2` | assistant |
-| 2026-11-05 | D23 | **Choix humain du modèle vision** : `mistralai/Mistral-Small-3.2-24B-Instruct-2506` (Albert, openweight-medium) remplace `gemma-4-31b-it`. `continuity-checker` v7. Vérifié en réel : description correcte d'un JPEG de `feu-follet-v2` | humain + assistant |
+| 2026-11-05 | D23 | **Vision réelle via Albert.** Le provider accepte `images`, l'exécuteur charge les binaires des agents qui déclarent `images`, le contenu part en `image_url` (data URI). `continuity-checker` passe à `gemma-4-31b-it` (v8), déclare `reference`, ne prétend plus être aveugle. 5 tests. **Vérifié en réel** : description correcte d'un JPEG de `feu-follet-v2` | assistant |
+| 2026-11-05 | D23 | **Choix humain du modèle vision** : Mistral-Small-3.2 essayé puis bascule immédiate sur `gemma-4-31b-it` (Albert, v8). Vérifié en réel : description correcte d'un JPEG de `feu-follet-v2` | humain + assistant |
 | 2026-11-05 | D26 | **Freeform vérifiable.** Le verdict porte `constraints` (`text`, `respected`, `evidence`) ; le schéma interdit `ok=true` si une contrainte est `respected=false`. Prompt v6 exige une entrée par contrainte freeform. 4 tests. **Vérifié en réel** : Albert rend `ok=false` argumenté et `{"text":"pas de dialogue","respected":true,"evidence":"aucune bulle..."}` | assistant |
 
 ---
@@ -830,7 +830,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D30.
 | D20 | **Un seul outil par `ToolAgent`** : la convention « exactement un outil déclaré » évite le routage multi-outils ; un agent qui compose deux outils n'existe pas | `executor._exec_tool` | M3 si le besoin apparaît |
 | D21 | **Déterminisme des media réels** : les clips synthétiques sont `bitexact` (retry = déduplication parfaite), un mp4/JPEG réel ne l'est pas — la déduplication par contenu n'y suffira pas | `tools/media.py`, `tools/images.py` | M4 |
 | D22 | **Le toolkit v1 (~25 outils MCP) n'est pas exposé** : le mécanisme marche, il manque le serveur (camel, context `projets/`) et ses fiches d'outils dans le registre | `pipeline/ztudioz_toolkit.py` v1, `tools.yamlld` | M3 — exposition, pas duplication |
-| ~~D23~~ | ~~Le verdict vision est un proxy texte~~ | **clos en M4** : un agent qui declare `images` recoit les binaires, le provider les envoie en `image_url` (data URI) ; `continuity-checker` passe a `mistralai/Mistral-Small-3.2-24B-Instruct-2506` et voit les pixels. Verifie en reel sur deux JPEG de `feu-follet-v2` | `catalog/agents/continuity-checker.yamlld`, `_exec_agent`, `tools/llm.py` | — |
+| ~~D23~~ | ~~Le verdict vision est un proxy texte~~ | **clos en M4** : un agent qui declare `images` recoit les binaires, le provider les envoie en `image_url` (data URI) ; `continuity-checker` passe a `gemma-4-31b-it` et voit les pixels. Verifie en reel sur deux JPEG de `feu-follet-v2` | `catalog/agents/continuity-checker.yamlld`, `_exec_agent`, `tools/llm.py` | — |
 | ~~D24~~ | ~~Contraintes du brief perdues avant les plans~~ | **clos** : `constraints.max_shots` entre dans le schéma du brief, `brief` devient entrée déclarée de `m1-scene` et de `shot-list`, et `limit:` borne le `foreach` avec troncature journalisée. Garde fou : feu-follet (6 shots produits par le LLM, max 2 demandé) ne paie plus que 2 images | — |
 | ~~D25~~ | ~~Pas de contexte projet~~ | **clos en M3.2** : le projet porte un `context:` (brief, contraintes, référence), fusionné aux entrées du run ; le workflow declare ce qu'il consomme une fois (`context:`), les nœuds n'en redeclarent rien. Entrée explicite prioritaire, contexte requis absent = échec avant appel, contexte optionnel absent = pas de borne. `m1-scene` ne redéclare plus `brief` | `studio/project.py`, `graph.Graph.context`, `executor.run` | — |
 | ~~D26~~ | ~~Seul `max_shots` est enforceable~~ | **clos en M4** : le verdict porte un tableau `constraints` (`text`, `respected`, `evidence`), une entree par contrainte freeform ; le schema refuse `ok=true` si une contrainte est `respected=false`. Verifie en reel (modele Albert) sur deux images | `catalog/agents/continuity-checker.yamlld`, `schemas/verdict.schema.json` | — |
