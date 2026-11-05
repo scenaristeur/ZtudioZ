@@ -107,7 +107,7 @@ export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
   partagé ; l'adaptateur honore les délais annoncés, un run M1 complet prend ~4-5 min).
 - Vidéos : `--video-provider pollinations` (`wan-fast` défaut, ~0,01 $/s ; `grok-video-pro`
   ~0,05 $/s via `STUDIO_VIDEO_MODEL`). Facturé à la seconde, budget refusé avant l'appel.
-- Vision : le `continuity-checker` utilise `gemma-4-31b-it` (Albert) et reçoit les **pixels**
+- Vision : le `continuity-checker` utilise `mistralai/Mistral-Small-3.2-24B-Instruct-2506` (Albert) et reçoit les **pixels**
   des images en `image_url` (data URI), pas seulement des références. Il rend une entrée par
   contrainte `freeform` du brief (`text`, `respected`, `evidence`) ; `ok=true` est refusé par
   le schéma si une contrainte est violée.
