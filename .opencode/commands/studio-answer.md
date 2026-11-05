@@ -16,3 +16,7 @@ Exécute dans `/home/smag/dev/ZtudioZ-v3` :
 
 Si `$5` est vide, omets `--feedback`. N'invente jamais la réponse ni la correction : recopie
 exactement ce que l'humain a donné. Montre le nouveau statut et la gate suivante.
+Termine par un résumé **très court** :
+- **Situation** : une phrase.
+- **Problème** : ce qui bloque, ou « rien ».
+- **Action** : la commande exacte à lancer ensuite (ou « rien à faire »).

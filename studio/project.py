@@ -215,9 +215,13 @@ def latest_run(project: "Project") -> dict | None:
                 "workflow": event.get("workflow"),
                 "status": "running",
                 "started": event.get("ts"),
+                "error": None,
             }
-        elif current and event.get("run") == current["run_id"] and event.get("type") == "run_finished":
-            current["status"] = event.get("status")
+        elif current and event.get("run") == current["run_id"]:
+            if event.get("type") == "node_failed":
+                current["error"] = event.get("error")
+            elif event.get("type") == "run_finished":
+                current["status"] = event.get("status")
     return current
 
 

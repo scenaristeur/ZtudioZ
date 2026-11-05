@@ -147,9 +147,16 @@ def _print_next(project: Project, registry) -> dict | None:
     if step["missing"]:
         print(f"manquant: {', '.join(step['missing'])}")
         example = json.dumps({name: "<valeur>" for name in step["missing"]}, ensure_ascii=False)
-        print(f"relancer avec --input '{example}'")
+        print(
+            "prochaine action: .venv/bin/python -m studio.cli --project "
+            f"{project.root} run {step['workflow']} --input '{example}'"
+        )
     else:
         print("pret a lancer")
+        print(
+            "prochaine action: .venv/bin/python -m studio.cli --project "
+            f"{project.root} run {step['workflow']}"
+        )
     return step
 
 
@@ -177,12 +184,35 @@ def cmd_status(args) -> int:
     print(f"cout journalise: {state.cost:.4f}")
     print(f"noeuds termines: {', '.join(sorted(state.completed)) or '-'}")
     if current["status"] == "blocked":
-        # Le journal est la source : on relit la derniere gate non repondue.
         gate = pending_gate(Journal(project.journal).events(), current["run_id"])
         if gate:
             print(f"gate: {gate['id']}")
             print(f"question: {gate['question']}")
             print(f"options: {', '.join(gate['options'])}")
+            executor = _project_executor(project, registry)
+            verdict = _verdict_summary(executor, current["run_id"])
+            if verdict is not None:
+                print(f"verdict: {'OK' if verdict['ok'] else 'a corriger'}")
+                if verdict["notes"]:
+                    print(f"  {verdict['notes']}")
+                for constraint in verdict["violated"]:
+                    evidence = constraint.get("evidence") or ""
+                    print(f"  x {constraint.get('text', '')} — {evidence}")
+            for line in _guidance(project, current["run_id"], gate["id"], verdict):
+                print(line)
+        else:
+            print("gate en attente introuvable dans le journal")
+        return 0
+    if current["status"] == "failed":
+        print(f"erreur: {current.get('error') or 'inconnue'}")
+        print(
+            "prochaine action: .venv/bin/python -m studio.cli --project "
+            f"{project.root} journal --run {current['run_id']}"
+        )
+        return 0
+    if current["status"] == "running":
+        print("run en cours : relancer status dans quelques instants")
+        return 0
     _print_next(project, registry)
     return 0
 
@@ -221,7 +251,69 @@ def _project_executor(project: Project, registry, answers: dict[str, str] | None
     )
 
 
-def _print_result(result, executor: Executor) -> int:
+def _answer_command(project: Project | None, run_id: str, gate: str, choice: str) -> str | None:
+    if project is None:
+        return None
+    return (
+        f".venv/bin/python -m studio.cli --project {project.root} "
+        f"answer {run_id} {gate} {choice}"
+    )
+
+
+def _verdict_summary(executor: Executor, run_id: str) -> dict | None:
+    state = executor.journal.state(run_id)
+    artifact = state.artifacts.get("verdict")
+    if not artifact:
+        return None
+    try:
+        value = executor.store.get(artifact)
+    except Exception:
+        return None
+    verdict = value.get("verdict", value) if isinstance(value, dict) else None
+    if not isinstance(verdict, dict):
+        return None
+    notes = verdict.get("notes")
+    if isinstance(notes, list):
+        notes = " ".join(map(str, notes))
+    violated = [
+        constraint
+        for constraint in (verdict.get("constraints") or [])
+        if isinstance(constraint, dict) and not constraint.get("respected")
+    ]
+    return {"ok": bool(verdict.get("ok")), "notes": notes or "", "violated": violated}
+
+
+def _suggest_feedback(verdict: dict) -> str:
+    parts = []
+    if verdict.get("notes"):
+        parts.append(str(verdict["notes"]))
+    for constraint in verdict.get("violated") or []:
+        evidence = constraint.get("evidence") or ""
+        parts.append(f"- {constraint.get('text', '')}: {evidence}")
+    return " ".join(parts)
+
+
+def _guidance(
+    project: Project | None, run_id: str, gate: str, verdict: dict | None
+) -> list[str]:
+    if project is None:
+        return []
+    accept = _answer_command(project, run_id, gate, "continue")
+    retry = _answer_command(project, run_id, gate, "retry")
+    if verdict is not None and not verdict["ok"]:
+        suggestion = _suggest_feedback(verdict)
+        return [
+            f"correction proposee: {suggestion}",
+            f"prochaine action: {retry} \"<correction ci-dessus>\"",
+            f"ou accepter:     {accept}",
+        ]
+    return [
+        f"prochaine action: {accept}",
+        f"ou corriger:     {retry} \"<correction>\"",
+    ]
+
+
+def _print_result(result, executor: Executor, project: Project | None = None) -> int:
     print(f"run: {result.run_id}")
     print(f"statut: {result.status}")
     print(f"noeuds termines: {', '.join(sorted(result.completed)) or '-'}")
@@ -231,17 +323,35 @@ def _print_result(result, executor: Executor) -> int:
         print(f"gate: {gate.id}")
         print(f"question: {gate.question}")
         print(f"options: {', '.join(gate.options)}")
-        print("relancer avec --answer " + gate.id + "=continue")
-        print("ou corriger avec --answer " + gate.id + "=retry --feedback \"" + gate.id + "=...\"")
+        verdict = _verdict_summary(executor, result.run_id)
+        if verdict is not None:
+            print(f"verdict: {'OK' if verdict['ok'] else 'a corriger'}")
+            if verdict["notes"]:
+                print(f"  {verdict['notes']}")
+            for constraint in verdict["violated"]:
+                evidence = constraint.get("evidence") or ""
+                print(f"  x {constraint.get('text', '')} — {evidence}")
+        for line in _guidance(project, result.run_id, gate.id, verdict):
+            print(line)
         return 3
     if result.status == "failed":
         print(f"erreur: {result.error}", file=sys.stderr)
+        if project is not None:
+            print(
+                f"prochaine action: .venv/bin/python -m studio.cli --project {project.root} status",
+                file=sys.stderr,
+            )
         return 1
     print(json.dumps(result.outputs, ensure_ascii=False, indent=2))
+    if project is not None:
+        print(
+            f"prochaine action: .venv/bin/python -m studio.cli --project {project.root} next"
+        )
     return 0
 
 
 def cmd_run(args) -> int:
+    load_env_file(".env")
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
     explicit = _parse_input(args.input)
     answers = _parse_pairs(args.answer, "--answer")
@@ -304,10 +414,11 @@ def cmd_run(args) -> int:
         print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
         return 130
 
-    return _print_result(result, executor)
+    return _print_result(result, executor, project)
 
 
 def cmd_answer(args) -> int:
+    load_env_file(".env")
     project = _load_project_or_fail(args)
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
     events = Journal(project.journal).events()
@@ -331,7 +442,7 @@ def cmd_answer(args) -> int:
     except KeyboardInterrupt:
         print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
         return 130
-    return _print_result(result, executor)
+    return _print_result(result, executor, project)
 
 
 def cmd_invalidate(args) -> int:

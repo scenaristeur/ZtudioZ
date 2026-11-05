@@ -14,3 +14,7 @@ Exécute dans `/home/smag/dev/ZtudioZ-v3` :
 ```
 
 Montre le run, son statut, la gate en attente et le palier suivant. Ne réponds à aucune gate.
+Termine par un résumé **très court** :
+- **Situation** : une phrase.
+- **Problème** : ce qui bloque (gate, verdict, erreur), ou « rien ».
+- **Action** : la commande exacte à lancer ensuite.

@@ -15,5 +15,6 @@ Exécute dans `/home/smag/dev/ZtudioZ-v3` :
 
 Si `$3` est vide, exécute sans `--input`. Montre le `run_id`, le statut, la gate en attente et
 les chemins d'artefacts. **Ne réponds pas à la gate** : attends le choix de l'humain.
+Termine par **Action** : la commande exacte pour répondre à la gate ou lancer le palier suivant.
 
 Avant un run réel, vérifie la config du projet et annonce le coût/temps.

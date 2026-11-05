@@ -14,4 +14,4 @@ Exécute dans `/home/smag/dev/ZtudioZ-v3` :
 ```
 
 Montre le palier suivant, ce qui est hérité et ce qui manque. Si une entrée manque, demande-la
-à l'humain.
+à l'humain. Termine par **Action** : la commande exacte à lancer.
