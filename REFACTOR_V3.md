@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés** — noyau complet, artefacts binaires typés et lignés,
 > adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par ffprobe,
-> échec d'item borné, sous-workflows, retry de gate, SIGINT, 154 tests verts, démos CLI
+> échec d'item borné, sous-workflows, retry de gate, SIGINT, 156 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés).
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
@@ -158,7 +158,7 @@ studio/
     schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
   cli.py           run | journal | validate | invalidate | --skills-root
-tests/             26 fichiers, 154 tests
+tests/             26 fichiers, 156 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -535,6 +535,16 @@ Comme D27, les deux derniers tests sont nés du **run réel** : les mocks ne peu
 qu'un tiers bloque l'User-Agent par défaut de Python, ni qu'un paramètre dépasse la borne d'une
 API. Le premier essai réel a échoué en 1,3 s sur chacun — **aucune vidéo n'a été facturée**.
 
+Tests ajoutés pour la gate avant les clips de `m2-montage` — **+2 tests, 156 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_m2_e2e.py` (contrat) | 1 | `gate_clips` est une `HumanGate` et le nœud `clips` en dépend |
+| `test_m2_e2e.py` (moteur) | 1 | sans réponse, le run bloque sur `gate_clips` **sans produire un seul mp4** ; le journal ne porte aucun `node_finished` |
+
+La gate s'ajoute au repli `m2-montage` : le chemin normal `m2-video` avait déjà sa gate avant
+dépense, le repli pouvait encore fabriquer des clips avant toute validation humaine.
+
 ---
 
 ## 9. Garde-fous
@@ -596,7 +606,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 104 passed
+.venv/bin/python -m pytest tests/      # 156 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -668,6 +678,7 @@ condition de :
 | 2026-11-05 | run réel | Premier appel : **403 tmpfiles** en 1,3 s. `urllib` s'annonce `Python-urllib/3.10`, tmpfiles le bloque ; curl passe avec un UA explicite. Test rouge, UA ajouté à l'upload **et** à la page de résolution | assistant |
 | 2026-11-05 | run réel | Deuxième appel : **400 Pollinations**, corps enfin lisible — le `seed` sur 64 bits dépasse `2147483647`. Test rouge, seed ramené modulo 2³¹−1. Les deux échecs n'ont rien coûté : aucune vidéo produite | assistant |
 | 2026-11-05 | run réel | **2 vidéos `wan-fast` en 8 min 21 s** : h264 512×512, 5,03 s, 161 images chacune, 0,1000 journalisé. Gates humaines : fiches → clips → montage. Montage `concat` : 10,06 s, 322 images, 536 Ko. `probe` : h264, 10,063 s, 1 flux. **154 verts** | assistant + humain |
+| 2026-11-05 | M2 vidéo | **Gate avant les clips sur le repli `m2-montage`** : le chemin normal avait sa gate avant dépense, le repli fabriquait encore ses clips avant toute validation. 2 tests rouges (contrat de graphe + aucun mp4 avant réponse), `gate_clips` en tête, nœud `clips` en `needs`, **156 verts**. Démo : bloque sur `gate_clips`, `continue` → gate_montage, `continue` → probe h264 | assistant |
 
 ---
 

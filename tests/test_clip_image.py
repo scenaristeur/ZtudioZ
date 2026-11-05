@@ -91,7 +91,11 @@ def test_m2_monte_les_images_de_m1(tmp_path):
     )
     clips = [{"image": store.get(key).ref(), "duration": 0.4} for key in images]
     result = asyncio.run(
-        executor.run("studio:workflow/m2-montage", {"clips": clips}, answers={"gate_montage": "continue"})
+        executor.run(
+            "studio:workflow/m2-montage",
+            {"clips": clips},
+            answers={"gate_clips": "continue", "gate_montage": "continue"},
+        )
     )
 
     assert result.status == "completed", result.error

@@ -89,6 +89,8 @@ Deux workflows :
 - **`m2-video`** : de vraies vidéos (image + mouvement -> mp4 généré). Une gate **avant** la
   génération, une gate sur les clips, puis le montage. C'est le chemin normal.
 - `m2-montage` : repli explicite sans génération (clips de couleur, ou images tenues fixes).
+  Il a lui aussi une gate **avant** la fabrication des clips (`gate_clips`), puis la gate du
+  montage (`gate_montage`). Sans réponse, aucun mp4 n'est produit.
 
 ```bash
 python -m studio.cli --runs $RUNS run studio:workflow/m2-video \

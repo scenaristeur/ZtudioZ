@@ -32,15 +32,45 @@ def make(tmp_path):
     return executor
 
 
+def test_m2_gate_clips_est_avant_le_noeud_clips():
+    """La validation humaine precede la fabrication des clips."""
+    graph = load_registry(STUDIO_ROOT).graph("studio:workflow/m2-montage")
+
+    assert graph.node("gate_clips").is_gate
+    assert "gate_clips" in graph.node("clips").needs
+
+
+def test_m2_sans_reponse_bloque_avant_de_fabriquer_un_clip(tmp_path):
+    executor = make(tmp_path)
+
+    blocked = asyncio.run(executor.run("studio:workflow/m2-montage", INPUTS))
+
+    assert blocked.status == "blocked"
+    assert blocked.pending_gate.id == "gate_clips"
+    assert list(executor.store.root.glob("*.mp4")) == []
+    finished = [e for e in executor.journal.events() if e["type"] == "node_finished"]
+    assert [e["node"] for e in finished] == []
+
+
 def test_m2_produces_a_probed_montage_behind_a_gate(tmp_path):
     executor = make(tmp_path)
 
     blocked = asyncio.run(executor.run("studio:workflow/m2-montage", INPUTS))
     assert blocked.status == "blocked"
-    assert blocked.pending_gate.id == "gate_montage"
+    assert blocked.pending_gate.id == "gate_clips"
+
+    clips_ok = asyncio.run(
+        executor.run("studio:workflow/m2-montage", INPUTS, answers={"gate_clips": "continue"})
+    )
+    assert clips_ok.status == "blocked"
+    assert clips_ok.pending_gate.id == "gate_montage"
 
     result = asyncio.run(
-        executor.run("studio:workflow/m2-montage", INPUTS, answers={"gate_montage": "continue"})
+        executor.run(
+            "studio:workflow/m2-montage",
+            INPUTS,
+            answers={"gate_clips": "continue", "gate_montage": "continue"},
+        )
     )
 
     assert result.status == "completed", result.error
@@ -60,10 +90,22 @@ def test_m2_produces_a_probed_montage_behind_a_gate(tmp_path):
 def test_m2_second_run_produces_nothing(tmp_path):
     executor = make(tmp_path)
 
-    asyncio.run(executor.run("studio:workflow/m2-montage", INPUTS, answers={"gate_montage": "continue"}))
+    asyncio.run(
+        executor.run(
+            "studio:workflow/m2-montage",
+            INPUTS,
+            answers={"gate_clips": "continue", "gate_montage": "continue"},
+        )
+    )
     produced = len([e for e in executor.journal.events() if e["type"] == "node_finished"])
 
-    asyncio.run(executor.run("studio:workflow/m2-montage", INPUTS, answers={"gate_montage": "continue"}))
+    asyncio.run(
+        executor.run(
+            "studio:workflow/m2-montage",
+            INPUTS,
+            answers={"gate_clips": "continue", "gate_montage": "continue"},
+        )
+    )
     after = len([e for e in executor.journal.events() if e["type"] == "node_finished"])
 
     assert after == produced
@@ -76,7 +118,7 @@ def test_m2_item_failure_does_not_stop_the_run(tmp_path):
         executor.run(
             "studio:workflow/m2-montage",
             {"clips": CLIPS + [{"color": "couleur-inexistante", "duration": 0.3}]},
-            answers={"gate_montage": "continue"},
+            answers={"gate_clips": "continue", "gate_montage": "continue"},
         )
     )
 

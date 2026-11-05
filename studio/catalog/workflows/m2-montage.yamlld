@@ -9,11 +9,16 @@ inputs:
     type: list
     required: true
 nodes:
+  - id: gate_clips
+    type: studio:HumanGate
+    question: Les fiches de clips sont-elles pretes a etre fabriquees ?
+    options: [continue, retry, stop]
   - id: clips
     agent: studio:agent/clip-maker
     foreach: "${clips}"
     parallel: 3
     on_item_failure: continue
+    needs: [gate_clips]
   - id: board
     agent: studio:agent/mounter
     needs: [clips]
