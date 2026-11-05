@@ -22,6 +22,8 @@ inputs:
     type: object
   feedback:
     type: string
+  references:
+    type: list
 outputs:
   image:
     type: object

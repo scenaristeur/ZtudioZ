@@ -160,6 +160,24 @@ def _print_next(project: Project, registry) -> dict | None:
     return step
 
 
+def cmd_bible(args) -> int:
+    from .bible import Bible
+
+    project = _load_project_or_fail(args)
+    bible = Bible(project.root / "bible")
+    entities = bible.list_entities(args.type)
+    if not entities:
+        print("bible vide")
+        return 0
+    for entity in entities:
+        sheet = entity.sheet
+        print(
+            f"{entity.type}/{entity.slug} — {entity.name} "
+            f"({entity.active_version}) — {sheet if sheet else 'pas de planche'}"
+        )
+    return 0
+
+
 def cmd_next(args) -> int:
     project = _load_project_or_fail(args)
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
@@ -248,6 +266,7 @@ def _project_executor(project: Project, registry, answers: dict[str, str] | None
         image=project.build("image"),
         video=project.build("video"),
         context=project.context,
+        bible_root=project.root / "bible",
     )
 
 
@@ -404,6 +423,7 @@ def cmd_run(args) -> int:
         image=image,
         video=video,
         context=project.context if project is not None else None,
+        bible_root=(project.root / "bible") if project is not None else None,
     )
     try:
         result = asyncio.run(
@@ -547,6 +567,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     next_cmd = sub.add_parser("next", help="affiche le palier suivant du projet")
     next_cmd.set_defaults(func=cmd_next)
+
+    bible = sub.add_parser("bible", help="liste les entites et planches de la bible")
+    bible.add_argument("--type", default=None, choices=["personnage", "lieu", "objet"])
+    bible.set_defaults(func=cmd_bible)
 
     status = sub.add_parser("status", help="etat du dernier run et palier suivant")
     status.set_defaults(func=cmd_status)

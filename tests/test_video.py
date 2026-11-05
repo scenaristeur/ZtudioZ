@@ -141,6 +141,7 @@ def test_la_video_recoit_le_mouvement_et_l_image_de_reference(tmp_path):
     record = video.records[0]
     assert "travelling avant lent" in record["prompt"], "le mouvement est perdu en route"
     assert record["reference"], "le provider video n'a pas recu l'image du plan"
+    assert record["references"], "la liste des references est vide"
     assert record["duration"] == DURATION
 
 

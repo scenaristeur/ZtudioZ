@@ -41,9 +41,10 @@ class VideoProvider(Protocol):
         system: str,
         prompt: str,
         reference: Binary | None = None,
+        references: list[Binary] | None = None,
         duration: float = 5.0,
     ) -> Binary:
-        """Produit un mp4 a partir d'un prompt et, si fournie, d'une image."""
+        """Produit un mp4 a partir d'un prompt et, si fournies, d'images."""
 
 
 def _require_image(reference: Binary | None) -> None:
@@ -103,9 +104,12 @@ class MockVideoProvider:
         system: str,
         prompt: str,
         reference: Binary | None = None,
+        references: list[Binary] | None = None,
         duration: float = 5.0,
     ) -> Binary:
-        _require_image(reference)
+        refs = references or ([reference] if isinstance(reference, Binary) else [])
+        for ref in refs:
+            _require_image(ref)
         self._active += 1
         self.max_concurrency = max(self.max_concurrency, self._active)
         self.calls += 1
@@ -116,6 +120,7 @@ class MockVideoProvider:
                 "system": system,
                 "prompt": prompt,
                 "reference": reference.hash if isinstance(reference, Binary) else None,
+                "references": [ref.hash for ref in refs],
                 "duration": float(duration),
             }
         )
@@ -125,7 +130,7 @@ class MockVideoProvider:
             if self.fail_on is not None and self.calls == self.fail_on:
                 raise RuntimeError(f"video mock: echec simule sur l'appel {self.calls}")
             digest = hashlib.sha256(
-                f"{prompt}|{duration}|{reference.hash if reference else ''}".encode()
+                f"{prompt}|{duration}|{'|'.join(ref.hash for ref in refs)}".encode()
             ).digest()
             return await asyncio.to_thread(_color_clip, digest[:3].hex(), float(duration), self.size)
         finally:
@@ -172,13 +177,17 @@ class PollinationsVideoProvider:
         system: str,
         prompt: str,
         reference: Binary | None = None,
+        references: list[Binary] | None = None,
         duration: float = 5.0,
     ) -> Binary:
-        _require_image(reference)
+        refs = references or ([reference] if isinstance(reference, Binary) else [])
+        for ref in refs:
+            _require_image(ref)
+        reference = refs[0] if refs else None
         api_key = os.environ.get(self.api_key_env, "") if self.api_key_env else ""
         seed = int.from_bytes(
             hashlib.sha256(
-                f"{prompt}|{duration}|{reference.hash if reference else ''}".encode()
+                f"{prompt}|{duration}|{'|'.join(ref.hash for ref in refs)}".encode()
             ).digest()[:8],
             "big",
         ) % 2_147_483_647

@@ -14,6 +14,10 @@ inputs:
   item:
     type: object
     required: true
+  references:
+    type: list
+  feedback:
+    type: string
 outputs:
   clip:
     type: object

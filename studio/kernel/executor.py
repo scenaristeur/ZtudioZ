@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import jsonschema
@@ -72,6 +73,7 @@ class Executor:
         image: Any | None = None,
         video: Any | None = None,
         context: dict[str, Any] | None = None,
+        bible_root: str | Path | None = None,
     ):
         self.registry = registry
         self.provider = provider
@@ -87,7 +89,11 @@ class Executor:
         self._global = asyncio.Semaphore(max_parallel)
         self._artifacts: dict[str, str] = {}
         self._unit_costs: dict[str, float] = {}
-        self._tools = ToolContext(store=store, registry=registry)
+        self._tools = ToolContext(
+            store=store,
+            registry=registry,
+            bible_root=Path(bible_root) if bible_root is not None else None,
+        )
         self._merged: dict[str, str] = {}
 
     async def run(
@@ -591,6 +597,9 @@ class Executor:
             )
 
         reference = self._reference(resolved)
+        references = self._references(resolved)
+        if references and reference is None:
+            reference = references[0]
         self.journal.append("node_started", run=run_id, node=unit)
         async with self._global:
             binary = await self.video.generate(
@@ -599,6 +608,7 @@ class Executor:
                 system=self._system(agent),
                 prompt=self._video_prompt(resolved),
                 reference=reference,
+                references=references,
                 duration=duration,
             )
 
@@ -809,18 +819,22 @@ class Executor:
         seulement des references d'artefacts. Les autres agents texte gardent
         un prompt JSON pur.
         """
-        if "images" not in (agent.get("inputs") or {}):
+        if "images" not in (agent.get("inputs") or {}) and "references" not in (
+            agent.get("inputs") or {}
+        ):
             return None
-        value = resolved.get("images")
-        if value is None:
-            return None
-        refs = value if isinstance(value, list) else [value]
+        values = []
+        for key in ("images", "references"):
+            if key in (agent.get("inputs") or {}) and resolved.get(key) is not None:
+                values.append(resolved[key])
         images = []
-        for ref in refs:
-            for hash_ in self._embedded(ref):
-                binary = self.store.get(hash_)
-                if str(getattr(binary, "media_type", "")).startswith("image/"):
-                    images.append(binary)
+        for value in values:
+            refs = value if isinstance(value, list) else [value]
+            for ref in refs:
+                for hash_ in self._embedded(ref):
+                    binary = self.store.get(hash_)
+                    if str(getattr(binary, "media_type", "")).startswith("image/"):
+                        images.append(binary)
         return images or None
 
     def _references(self, resolved: dict[str, Any]) -> list:
@@ -921,7 +935,10 @@ class Executor:
         item = resolved.get("item")
         motion = item.get("motion") if isinstance(item, dict) else None
         if isinstance(motion, str) and motion.strip():
-            return f"{base}. Mouvement: {motion.strip()}"
+            base = f"{base}. Mouvement: {motion.strip()}"
+        feedback = resolved.get("feedback")
+        if isinstance(feedback, str) and feedback.strip():
+            base = f"{base}. Correction demandee: {feedback.strip()}"
         return base
 
     @staticmethod

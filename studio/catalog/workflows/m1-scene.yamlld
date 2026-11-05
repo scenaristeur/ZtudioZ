@@ -11,6 +11,8 @@ inputs:
   reference:
     type: string
     required: true
+  references:
+    type: list
 context:
   brief:
     required: false
@@ -19,9 +21,11 @@ nodes:
     agent: studio:agent/shot-list
   - id: ref_image
     agent: studio:agent/reference-keeper
+  - id: refs
+    agent: studio:agent/sheet-keeper
   - id: images
     agent: studio:agent/image-creator
-    needs: [shots, ref_image]
+    needs: [shots, ref_image, refs]
     foreach: "${shots}"
     limit: "${brief.constraints.max_shots}"
     parallel: 3
@@ -32,7 +36,7 @@ nodes:
     options: [continue, retry, stop]
   - id: verdict
     agent: studio:agent/continuity-checker
-    needs: [images, gate_images, shots]
+    needs: [images, gate_images, shots, refs]
   - id: gate_verdict
     type: studio:HumanGate
     needs: [verdict, images]

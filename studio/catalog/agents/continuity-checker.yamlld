@@ -40,6 +40,8 @@ inputs:
     required: true
   reference:
     type: string
+  references:
+    type: array
   brief:
     type: object
   feedback:

@@ -32,6 +32,7 @@ def build_executor(project, registry, answers: dict[str, str] | None = None) -> 
         image=project.build("image"),
         video=project.build("video"),
         context=project.context,
+        bible_root=project.root / "bible",
     )
 
 

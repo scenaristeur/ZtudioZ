@@ -1,0 +1,15 @@
+"@context": "studio:context"
+"@id": "studio:agent/sheet-keeper"
+type: studio:ToolAgent
+name: Gardien des planches de reference
+description: Resout les entites de la bible en planches utilisables comme references image.
+version: 1
+tools:
+  - bible.sheets
+inputs:
+  references:
+    type: list
+outputs:
+  references:
+    type: array
+budget: 0

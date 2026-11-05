@@ -73,9 +73,19 @@ python -m studio.cli --project runs/<slug> run studio:workflow/m1-scene \
 ```
 
 `next` affiche le palier suivant, ce qui est hérité et ce qui manque. `status` montre le
-dernier run, son coût, ses nœuds et la gate en attente. Le CLI vérifie les entrées requises
+dernier run, son coût, ses nœuds et la gate en attente. `bible` liste les entités et planches
+(`studio --project <dossier> bible [--type lieu]`). Le CLI vérifie les entrées requises
 **avant** tout appel : une entrée manquante ou un JSON invalide sort en erreur propre, sans
 traceback.
+
+### Bible et références
+
+La bible v1 est lue telle quelle : `bible/<type>/<slug>/fiche.yaml` + `sheet_<version>.png`.
+`m1-scene` accepte `references: ["lieu/desert", "personnage/mael"]` ; l'agent `sheet-keeper`
+résout les planches, les stocke comme artefacts, et les ImageAgents les reçoivent avec la
+planche générée. Le contrôleur de continuité reçoit aussi ces images pour comparer les shots
+aux planches. La vidéo accepte de même une liste `references` (Pollinations n'en utilise
+qu'une ; Agnes local gère le chaînage).
 
 Le CLI affiche `herite du journal: ...`. Un run **bloqué** à une gate ne nourrit pas la
 mémoire : seule une validation humaine terminée compte. L'ordre est

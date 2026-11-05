@@ -9,6 +9,9 @@ tools:
   media.probe:
     kind: python
     impl: studio.tools.media:probe
+  bible.sheets:
+    kind: python
+    impl: studio.tools.bible:sheets
   vision.describe:
     kind: mcp
     server: character-designer

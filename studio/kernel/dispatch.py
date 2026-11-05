@@ -13,6 +13,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from importlib import import_module
+from pathlib import Path
 from typing import Any
 
 from .artifacts import ArtifactStore
@@ -24,10 +25,11 @@ TOOL_KINDS = {"python", "cli", "mcp"}
 
 @dataclass
 class ToolContext:
-    """Ce qu'un outil a le droit de connaitre du monde : le store et le registre."""
+    """Ce qu'un outil a le droit de connaitre du monde : le store, le registre et la bible."""
 
     store: ArtifactStore
     registry: Registry
+    bible_root: Path | None = None
 
 
 def _load_impl(dotted: str):
