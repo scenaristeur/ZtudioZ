@@ -4,6 +4,9 @@ description: Palier suivant du projet et entrées manquantes
 
 Tu es l'opérateur du studio v3. Projet : **$1**.
 
+Si `$1` est vide, demande le dossier du projet et **arrête-toi** : n'exécute pas la commande
+avec une valeur vide.
+
 Exécute dans `/home/smag/dev/ZtudioZ-v3` :
 
 ```bash
@@ -11,4 +14,4 @@ Exécute dans `/home/smag/dev/ZtudioZ-v3` :
 ```
 
 Montre le palier suivant, ce qui est hérité et ce qui manque. Si une entrée manque, demande-la
-à l'humain. Si `$1` est vide, demande le dossier du projet.
+à l'humain.
