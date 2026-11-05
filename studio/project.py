@@ -133,6 +133,41 @@ class Project:
         return builder(**config.options)
 
 
+def project_memory(project: "Project") -> dict[str, Any]:
+    """Entrees et sorties du dernier run **termine** du projet.
+
+    Un run bloque a une gate n'est pas une validation : il ne nourrit pas la
+    memoire. Les sorties des noeuds remplacent les entrees du run (meme valeur
+    en pratique) et sont fusionnees dans un seul dictionnaire.
+    """
+    from .kernel.artifacts import ArtifactStore
+    from .kernel.journal import Journal
+
+    journal = Journal(project.journal)
+    events = journal.events()
+    run_id = None
+    for event in reversed(events):
+        if event.get("type") == "run_finished" and event.get("status") == "completed":
+            run_id = event.get("run")
+            break
+    if not run_id:
+        return {}
+
+    store = ArtifactStore(project.artifacts)
+    memory: dict[str, Any] = {}
+    for event in events:
+        if event.get("run") != run_id:
+            continue
+        event_type = event.get("type")
+        if event_type == "run_started":
+            memory.update(event.get("inputs") or {})
+        elif event_type == "node_finished" and "#" not in event.get("node", ""):
+            value = store.get(event["artifact"])
+            if isinstance(value, dict):
+                memory.update(value)
+    return memory
+
+
 def _read(path: Path) -> dict:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))

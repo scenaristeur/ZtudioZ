@@ -10,10 +10,11 @@ from pathlib import Path
 
 from .kernel.artifacts import ArtifactStore
 from .kernel.context import short_iri
+from .kernel.errors import LoadError
 from .kernel.executor import Executor
 from .kernel.journal import Journal
 from .kernel.registry import STUDIO_ROOT, load_registry
-from .project import Project, ProjectError
+from .project import Project, ProjectError, project_memory
 from .tools.images import (
     MockImageProvider,
     OpenAICompatImageProvider,
@@ -118,6 +119,23 @@ def cmd_run(args) -> int:
     project = _load_project(args)
     runs = _runs_dir(args, project)
 
+    explicit = dict(inputs)
+    if project is not None:
+        workflow = registry.workflow(args.workflow)
+        wanted = set(workflow.get("inputs") or {})
+        raw_context = workflow.get("context") or {}
+        if isinstance(raw_context, dict):
+            wanted |= set(raw_context)
+        else:
+            wanted |= {str(name) for name in raw_context}
+        memory = {
+            name: value for name, value in project_memory(project).items() if name in wanted
+        }
+        inputs = {**memory, **project.context, **explicit}
+        inherited = sorted(set(inputs) - set(explicit) - set(project.context))
+        if inherited:
+            print(f"herite du journal: {', '.join(inherited)}")
+
     if project is not None:
         provider = _build_provider(args.provider) if args.provider else project.build("llm")
         image = (
@@ -151,6 +169,9 @@ def cmd_run(args) -> int:
         # D13 : l'interruption ne casse rien — le journal append-only permet de reprendre
         print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
         return 130
+    except LoadError as exc:
+        print(f"ERREUR: {exc}", file=sys.stderr)
+        return 1
 
     print(f"run: {result.run_id}")
     print(f"statut: {result.status}")

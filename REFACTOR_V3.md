@@ -6,11 +6,12 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 175 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 178 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
-> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 et M3.2 livrées** : un
-> projet porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le
-> projet et les workflows héritent du brief sans le redéclarer.
+> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.3 livrées** : un projet
+> porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
+> les workflows héritent du brief sans le redéclarer, et le journal d'un run terminé nourrit
+> le palier suivant.
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
@@ -161,7 +162,7 @@ studio/
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
   cli.py           run | journal | validate | invalidate | --skills-root | --project
   project.py       studio.yaml -> providers + racine artefacts/journal
-tests/             28 fichiers, 175 tests
+tests/             29 fichiers, 178 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -455,7 +456,7 @@ depuis le web. Le travail est découpé en tranches démontrables, chacune TDD :
 |---|---|---|---|
 | 1 | **Projet + config providers** : `studio.yaml`, résolution `${VAR}`, providers construits depuis le projet, `run --project` — **fait** | un run mock M2 s'écrit dans le projet, sans flag provider | — |
 | 2 | **Contexte projet hérité** : brief, contraintes et référence portés par le projet, injectés sans redéclaration à chaque nœud — **fait** | changer le brief du projet invalide l'aval sans toucher aux workflows | D25 |
-| 3 | **Enchaînement des paliers** : M0 → M1 → M2 depuis la CLI, gates humaines inchangées | un projet avance jusqu'au montage, reprise après `Ctrl-C` comprise | D10 |
+| 3 | **Enchaînement des paliers** : M0 → M1 → M2 depuis la CLI, gates humaines inchangées — **fait** | un projet avance jusqu'au montage, reprise après `Ctrl-C` comprise | D10 |
 | 4 | **API** : projets, runs, journal, artefacts, réponse aux gates | le journal d'un run est lisible en HTTP, une gate se répond sans CLI | D11, D16 |
 | 5 | **Web** : UI pilotée par le graphe, plus de vues par étape | une gate se voit et se répond dans le navigateur | D22 |
 | 6 | **Clôture M3** : coûts réels, toolkit v1 exposé, replay | un run réel se pilote de bout en bout depuis le web | D11, D22, D30 |
@@ -592,6 +593,19 @@ une fois, et le nœud `images` garde sa borne `limit: ${brief.constraints.max_sh
 reste optionnel — un run sans brief n'est pas cassé — mais un workflow qui le déclare
 **requis** échoue net s'il manque.
 
+Tests ajoutés pour la tranche M3.3 (enchaînement des paliers) — **+3 tests, 178 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_project_chain.py` (chaîne) | 1 | après un M0 terminé, `m1-scene` récupère `treatment` et `brief` du journal sans les recopier ; seules les clés attendues par le workflow sont héritées |
+| `test_project_chain.py` (gate) | 1 | un run **bloqué** à une gate ne nourrit pas la mémoire : le palier suivant échoue sur l'entrée manquante |
+| `test_project_chain.py` (priorité) | 1 | une entrée explicite en `--input` écrase la mémoire du journal |
+
+La mémoire du projet est le **dernier run terminé** (`run_finished: completed`) : ses entrées
+et ses sorties sont fusionnées, puis filtrées par les `inputs`/`context` du workflow cible.
+Ordre de priorité : `--input` explicite > `context` du projet > journal. Le CLI affiche
+`herite du journal: ...` pour que rien ne soit silencieux.
+
 ---
 
 ## 9. Garde-fous
@@ -653,7 +667,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 175 passed
+.venv/bin/python -m pytest tests/      # 178 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -729,6 +743,7 @@ condition de :
 | 2026-11-05 | M3 | **Décisions humaines** : D30 tranché — `tmpfiles.org` accepté pour les runs vidéo réels, stockage maîtrisé et réconciliation repoussés à M4. Le WIP `brief-synthesizer` est commité par l'humain (`1e8463a`). M3 découpé en 6 tranches (section 7.1) | humain |
 | 2026-11-05 | M3.1 | **Projet + config providers** : 11 tests rouges d'abord, **167 verts**. `studio.yaml` (nom, providers llm/image/video), interpolation `${VAR}` stricte, kinds mock/openai/pollinations, construction des adaptateurs, CLI `--project` (artefacts, journal et providers lus depuis le projet ; `journal` et `invalidate` aussi). Aucun secret dans la config. Démo : un run `m2-montage` mock s'écrit dans `/tmp/.../demo-project` | assistant |
 | 2026-11-05 | M3.2 | **D25 clos** : contexte projet hérité. 8 tests rouges d'abord, **175 verts**. `context:` au `studio.yaml`, déclaré une fois par workflow (`context: [brief]` requis ou `{brief: {required: false}}`), fusionné aux entrées (l'explicite gagne), validé avant tout appel, borne `limit` résolue depuis le contexte. `m1-scene` ne redéclare plus `brief`. Démo : `--project` + brief `max_shots: 1` → une seule image, sans `brief` dans `--input` | assistant |
+| 2026-11-05 | M3.3 | **Enchaînement des paliers** : 3 tests rouges d'abord, **178 verts**. La mémoire du projet = entrées + sorties du dernier run **terminé**, filtrées par les entrées/context du workflow cible ; priorité `--input` > contexte > journal ; un run bloqué ne nourrit pas la mémoire ; le CLI affiche `herite du journal`. Démo : M0 mock → M1 mock avec seulement `reference`, `treatment` et `brief` hérités | assistant |
 
 ---
 

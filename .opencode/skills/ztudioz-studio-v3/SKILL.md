@@ -39,6 +39,24 @@ Un workflow déclare ce qu'il consomme **une fois** : `context: [brief]` (requis
 `context: {brief: {required: false}}` (optionnel). Une entrée explicite en `--input` écrase
 le contexte du projet. `m1-scene` ne redemande plus `brief` : il vient du projet.
 
+### Enchaîner les paliers
+
+Après un run **terminé**, le suivant hérite des entrées et sorties du dernier run, filtrées
+par ce que son workflow déclare. Exemple M0 → M1 :
+
+```bash
+python -m studio.cli --project runs/<slug> run studio:workflow/m0-conversation \
+  --input '{"discussion": "<discussion>"}' --answer gate_brief=continue
+
+# treatment + brief viennent du journal ; seule la référence est humaine
+python -m studio.cli --project runs/<slug> run studio:workflow/m1-scene \
+  --input '{"reference": "<ancre visuelle>"}' --answer gate_images=continue
+```
+
+Le CLI affiche `herite du journal: ...`. Un run **bloqué** à une gate ne nourrit pas la
+mémoire : seule une validation humaine terminée compte. L'ordre est
+`--input` explicite > `context` du projet > journal.
+
 ## Règles permanentes
 
 - Ne jamais écrire dans `/home/smag/dev/ZtudioZ/projets/` ni modifier `main`.
