@@ -79,7 +79,7 @@ L'API ne lance pas encore de nouveaux runs : elle répond aux gates. Pas d'authe
 ```bash
 cd web && npm install && npm run build   # dist committé, inutile en général
 cd .. && python -m studio.cli serve --projects runs
-# http://127.0.0.1:8000
+# http://127.0.0.1:8000  (si le port est pris, ex. Portainer : --port 8001)
 ```
 
 La page est **pilotée par le graphe** : projets, runs, colonnes du DAG, cartes de nœuds
@@ -107,6 +107,10 @@ export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
   partagé ; l'adaptateur honore les délais annoncés, un run M1 complet prend ~4-5 min).
 - Vidéos : `--video-provider pollinations` (`wan-fast` défaut, ~0,01 $/s ; `grok-video-pro`
   ~0,05 $/s via `STUDIO_VIDEO_MODEL`). Facturé à la seconde, budget refusé avant l'appel.
+- Vision : le `continuity-checker` utilise `gemma-4-31b-it` (Albert) et reçoit les **pixels**
+  des images en `image_url` (data URI), pas seulement des références. Il rend une entrée par
+  contrainte `freeform` du brief (`text`, `respected`, `evidence`) ; `ok=true` est refusé par
+  le schéma si une contrainte est violée.
 - Démo sans réseau : omit les flags, tout est mock (0 coût, 0 réseau).
 
 ## Créer un projet et dérouler les paliers
