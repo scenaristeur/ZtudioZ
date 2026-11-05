@@ -3,12 +3,17 @@
 type: studio:LlmAgent
 name: Liste de plans
 description: Decoupe un traitement en plans numerotes, un prompt visuel par plan.
-version: 1
+version: 2
 model: mock/echo
 prompt: |
   A partir du traitement lineaire, tu decoupes la scene en plans.
   Chaque plan recoit un numero et un prompt visuel d'une phrase.
   Tu ne crees aucun personnage et aucun lieu absents du traitement.
+  Si un brief est fourni, ses contraintes sont des ordres, pas des suggestions :
+  `constraints.max_shots` est le nombre de plans que tu dois produire, ni plus
+  ni moins ; chaque contrainte de `constraints.freeform` s'applique a chaque
+  plan. Le traitement n'annule jamais une contrainte du brief : si les deux se
+  contredisent, respecte la contrainte et signale la contradiction.
   Tu reponds en JSON avec la cle "shots", liste de {"id", "prompt"}.
 skills:
   - scenario-structure
@@ -16,6 +21,8 @@ inputs:
   treatment:
     type: string
     required: true
+  brief:
+    type: object
 outputs:
   shots:
     type: array

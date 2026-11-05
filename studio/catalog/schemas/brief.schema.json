@@ -20,6 +20,18 @@
     "open_questions": {
       "type": "array",
       "items": {"type": "string"}
+    },
+    "constraints": {
+      "type": "object",
+      "description": "Contraintes explicitement posees par l'auteur. Elles doivent survivre a chaque palier.",
+      "additionalProperties": false,
+      "properties": {
+        "max_shots": {"type": "integer", "minimum": 1},
+        "freeform": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
     }
   }
 }

@@ -110,9 +110,9 @@ class MockProvider:
         if t == "boolean":
             return True
         if t == "integer":
-            return index
+            return max(index, int(spec.get("minimum", 0) or 0))
         if t == "number":
-            return float(index)
+            return float(max(index, float(spec.get("minimum", 0) or 0)))
         if t == "array":
             # le mockhonore minItems : une liste d'exemple doit rester conforme
             count = max(1, int(spec.get("minItems", 1) or 1))

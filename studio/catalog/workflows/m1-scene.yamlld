@@ -11,6 +11,8 @@ inputs:
   reference:
     type: string
     required: true
+  brief:
+    type: object
 nodes:
   - id: shots
     agent: studio:agent/shot-list
@@ -20,6 +22,7 @@ nodes:
     agent: studio:agent/image-creator
     needs: [shots, ref_image]
     foreach: "${shots}"
+    limit: "${brief.constraints.max_shots}"
     parallel: 3
   - id: gate_images
     type: studio:HumanGate

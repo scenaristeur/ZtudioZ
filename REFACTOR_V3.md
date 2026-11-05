@@ -309,6 +309,7 @@ Sémantique réalisée :
 | `foreach` | **fait** — expansion en items, portée par un sémaphore propre |
 | `as:` | **fait (M2)** — l'item est aussi injecté sous le nom déclaré (`as: shot`), `item` reste l'alias par défaut |
 | `parallel` | **fait** — borne de concurrence par nœud + sémaphore global d'executor |
+| `limit` | **fait (D24)** — borne le fan-out d'un `foreach`, en entier ou en référence `${...}` ; la troncature est journalisée (`items_truncated`), jamais silencieuse |
 | `on_item_failure: continue` | **fait (M2)** — un item en panne est journalisé (`item_failed`) et retiré du résultat groupé ; le nœud échoue seulement si **tous** les items tombent |
 | sous-workflow (`agent: studio:workflow/...`) | **fait (M2)** — exécuté par un `Executor` enfant, journal propre (`run#node`), gates exposées préfixées (`node/gate`), sorties fusionnées, cache au niveau du nœud parent |
 | un nœud qui ne dépend d'aucune gate voit son exécution ordonnée par nom, la gate étant traitée avant les nœuds du même niveau | **fait** |
@@ -369,7 +370,7 @@ toujours le premier mécanisme à l'œuvre ; `invalidate()` est le mécanisme ac
 Journal JSONL append-only. Événements réellement émis :
 
 `run_started` · `node_started` · `node_finished` · `node_skipped` (avec `reason: cache`) ·
-`node_failed` · `item_failed` · `budget_refused` · `gate_asked` · `gate_answered` ·
+`node_failed` · `item_failed` · `items_truncated` · `budget_refused` · `gate_asked` · `gate_answered` ·
 `gate_retry` · `nodes_invalidated` · `run_finished`
 
 Chaque événement porte `seq` (croissant, global au fichier), `ts` (UTC ISO) et `run`.
@@ -383,15 +384,24 @@ dans `RunState.cost`, et le CLI affiche « cout journalise ».
 a son événement propre, en plus du `node_failed`). **Non réalisé** : un vrai `replay`
 reconstruisant les sorties sans relire le store — le store le fait déjà (dette D10, reportée).
 
-### 6.9 Cache et budget
+### 6.9 Cache, budget et bornes
 
 Clé de cache = `hash(id du nœud + @id agent + version + modèle + prompt + entrées déclarées
 résolues + item)`. Cache hit = zéro appel, zéro coût, événement `node_skipped`.
 
-Piège découvert en M0 et **conservé tel quel** : la clé ne contient que les entrées **déclarées**
-par l'agent. Un agent qui ne déclare aucun `inputs` ne voit donc pas sa clé changer quand une
-entrée du run change — il est recalculé comme identique. C'est exact (il ne consomme rien de
-l'entrée) et c'est ce que vérifie `test_changed_input_invalidates_downstream`.
+**La clé est par item, pas par nœud.** Conséquence utile pour `limit` : passer une borne de 2
+à 4 plans **re-paie uniquement les 2 items manquants**, jamais les 2 déjà produits
+(`test_elargir_la_limite_ne_rappelle_que_les_items_manquants`). La borne n'entre donc pas dans
+la clé : elle décide *combien* d'items sont distribués, pas *ce que vaut* un item.
+
+Sémantique de `limit` (D24), distinguée volontairement :
+
+| Cas | Comportement |
+|---|---|
+| `limit: 0`, `limit: "deux"`, booléen | **refusé au chargement** (`GraphError`) |
+| racine absente de la portée **et** non déclarée comme entrée du workflow | **erreur d'exécution** : on refuse de deviner ce que l'auteur voulait borner |
+| racine déclarée **optionnelle** et non fournie, ou feuille manquante (`brief.constraints` absent) | **pas de borne** : on ne tronque pas ce qui n'est pas contraint |
+| borne régulière et plus petite que la liste | troncature + `items_truncated {produced, kept}` dans le journal |
 
 Budget vérifié **avant** l'appel : si `provider.estimate() > agent.budget`, on lève
 `BudgetError` et le compteur d'appels reste à 0. Le test
@@ -483,6 +493,16 @@ Tests ajoutés après M2 (run réel & branchements) — **+24 tests, 104 verts**
 | `test_skills_roots.py` | 4 | `extra_skill_roots` charge des packs externes, `--skills-root` au CLI, et les 11 skills v1 sont des packs valides (skip si dépôt v1 absent) |
 | `test_images.py` (+2) | 2 | `_text_prompt` : phrase naturelle du plan, pas de bloc JSON dans le prompt d'image |
 | `test_m1_e2e.py` (+1) | 1 | `notes` du verdict : chaîne ou liste, selon le schéma élargi |
+
+Tests ajoutés pour D24 (contraintes du brief jusqu'aux plans) — rouges d'abord, **+21 tests,
+125 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_constraints.py` (schéma) | 3 | un brief peut porter `constraints.max_shots` ; `0` et `"deux"` sont refusés par le schéma |
+| `test_constraints.py` (borne) | 8 | `limit` borne le fan-out, une borne plus grande que la liste ne perd rien, sans `limit` tous les items passent, troncature journalisée (`produced`/`kept`), **élargir 2→4 ne repaie que les 2 manquants**, même borne = cache, `limit: 0` et `limit: "deux"` refusés au chargement, `${racine_inconnue}` = échec net |
+| `test_constraints.py` (transport) | 4 | `shot-list` et `m1-scene` déclarent le `brief`, le brief traverse réellement jusqu'au prompt de l'agent, le pack `scenario-structure` exige de coucher les contraintes |
+| `test_constraints.py` (catalogue livré) | 4 | **feu-follet ne peut plus produire 6 plans** : le LLM surcompte (6 shots), le moteur ne paie que 2 images et journalise la troncature ; sans contrainte, les 6 plans passent tous ; le mock honore `minimum` |
 
 ---
 
@@ -596,6 +616,15 @@ condition de :
 | 2026-10-31 | M2+ | **Run réel M1 complet** (D14 clos, texte + images) : Albert pour les plans, Pollinations pour 4 JPEG réels. Découverte API : quota double (par IP `FREE_LIMIT` 45 s, global `SERVICE_UNAVAILABLE`), rendu en 402 comme en 503 — l'adaptateur honore le délai annoncé et se série lui-même | assistant + providers |
 | 2026-10-31 | M2+ | Le contrat de sortie a fait son travail : gpt-oss a rendu `notes` en liste, refusé par le schéma, puis accepté — `verdict.schema.json` élargi à `oneOf` chaîne/liste. Le verdict réel reste `ok=false` : le contrôleur ne voit pas les pixels (dette D23, multimodal = M4) | assistant |
 | 2026-10-31 | M2+ | Prompt d'image naturel : `_text_prompt` extrait la phrase du plan au lieu d'un bloc JSON — les providers d'images ne veulent pas de JSON dans le prompt | assistant |
+| 2026-11-05 | — | `.env` copié dans le worktree pour les providers réels ; vérifié : ignoré par git dans les deux worktrees, jamais commité, aucun secret dans le code suivi. Albert (texte) répond en réel, les JPEG de `runs/real-poll` sont bien des sorties Pollinations | humain + assistant |
+| 2026-11-05 | — | Choix humain : corriger **D24 d'abord** plutôt que relancer une démo ; le prompt `brief-synthesizer` en WIP est **laissé tel quel**, non commité, non annulé | humain |
+| 2026-11-05 | D24 | Diagnostic corrigé avant de coder : la cause n'est pas seulement `m1-scene`. La discussion disait « deux plans maximum », le **traitement** sorti du M0 en contenait déjà 3+. La contrainte n'avait **nulle part où se loger** — le schéma du brief n'avait pas de `constraints`. Un colmatage sur m1 aurait laissé la fuite en amont | assistant |
+| 2026-11-05 | D24 | 21 tests rouges d'abord, **125 verts** à la fin. `constraints.max_shots` au schéma (`minimum: 1`), `brief` déclaré entrée de `m1-scene` et de `shot-list` (version bumpée à 2, sinon le cache rejoue l'ancien prompt), `limit:` sur le `foreach` des images | assistant |
+| 2026-11-05 | D24 | **Deux cas distincts, un seul silencieux acceptable** : racine non déclarée = erreur de graphe (on ne devine pas ce que l'auteur voulait borner) ; entrée déclarée *optionnelle* absente, ou `constraints` manquant = pas de borne. Sans cette distinction, chaque run existant sans brief échouait | assistant |
+| 2026-11-05 | D24 | **La borne n'entre pas dans la clé de cache** : le cache est par item, donc 2→4 plans ne repaie que les 2 manquants. Mon premier test exigeait 6 appels — c'était une mauvaise garantie, corrigée avant l'implémentation | assistant |
+| 2026-11-05 | D24 | Guidance `constraints` écrite dans le **pack** `scenario-structure` (partagé par les agents), pas dans le prompt de `brief-synthesizer` : évite d'écraser le WIP de l'humain, et c'est le bon endroit — de la connaissance, pas une instruction par agent | assistant |
+| 2026-11-05 | D24 | Effet de bord trouvé par un run vert qui ne l'était pas : `_fake_value` du mock fabriquait `max_shots: 0`, contraire au schéma qu'il est censé honorer (`minItems` était honoré, `minimum` non). Le mock n'a pas le droit de produire un artefact invalide | assistant |
+| 2026-11-05 | D24 | Dettes ouvertes consignées : **D25** (pas de contexte projet — la contrainte traverse parce qu'on redéclare `brief` partout, l'oubli ne serait pas signalé) et **D26** (`freeform` n'est qu'une espérance de prompt, seul le nombre est enforceable) | assistant |
 
 ---
 
@@ -603,10 +632,11 @@ condition de :
 
 Liste volontairement exhaustive : c'est le carnet de charges du palier suivant, et ce qui
 empêche de croire que le noyau est fini. Clos : D1–D3 (M1), D4–D9, D13, D17, D18 (M2),
-D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp).
-Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23.
+D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp), D24 (contraintes
+transportées et bornées).
+Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26.
 
-| # | Écart | Onde le voir | À traiter |
+| # | Écart | Où le voir | À traiter |
 |---|---|---|---|
 | ~~D1~~ | ~~Artefacts JSON uniquement~~ | **clos en M1** : `Binary` + `<hash>.<ext>`, empreinte sur les octets bruts | — |
 | ~~D2~~ | ~~Pas de lignée~~ | **clos en M1** : `lineage.json`, `Artifact(hash, value, media_type, parents, producer, cost)` | — |
@@ -631,7 +661,9 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23.
 | D21 | **Déterminisme des media réels** : les clips synthétiques sont `bitexact` (retry = déduplication parfaite), un mp4/JPEG réel ne l'est pas — la déduplication par contenu n'y suffira pas | `tools/media.py`, `tools/images.py` | M4 |
 | D22 | **Le toolkit v1 (~25 outils MCP) n'est pas exposé** : le mécanisme marche, il manque le serveur (camel, context `projets/`) et ses fiches d'outils dans le registre | `pipeline/ztudioz_toolkit.py` v1, `tools.yamlld` | M3 — exposition, pas duplication |
 | D23 | **Le verdict vision est un proxy texte** : le noeud recoit des references d'artefacts, pas les pixels ; un reel `continuity-checker` refuse donc a juste titre (`ok=false`) | `catalog/agents/continuity-checker.yamlld`, `_exec_agent` | M4 : entrees multimodales des providers LLM |
-| D24 | **Les contraintes du brief ne voyagent pas jusqu'aux plans** : la démo « feu-follet » (max 2 plans demandés) a produit 6 shots — m1-scene ne reçoit que le `treatment`, pas le brief. Il faut un contexte projet porté par le graphe (ou passer `brief` en entrée de m1) | `catalog/workflows/m1-scene.yamlld` | M3 (contexte projet) — ou colmatage immédiat si le besoin presse |
+| ~~D24~~ | ~~Contraintes du brief perdues avant les plans~~ | **clos** : `constraints.max_shots` entre dans le schéma du brief, `brief` devient entrée déclarée de `m1-scene` et de `shot-list`, et `limit:` borne le `foreach` avec troncature journalisée. Garde fou : feu-follet (6 shots produits par le LLM, max 2 demandé) ne paie plus que 2 images | — |
+| D25 | **Pas de contexte projet** : la contrainte traverse parce qu'on redéclare `brief` à chaque workflow et à chaque agent. Un nouveau palier qui oublie de le faire perd la contrainte, et rien ne le signale. Il manque un objet projet porté par le graphe, hérité par tous les nœuds sans redéclaration | `catalog/workflows/*.yamlld` (entrées répétées), `executor._resolve_inputs` | M3 |
+| D26 | **Seul `max_shots` est enforceable** : les contraintes de `constraints.freeform` (« pas de dialogue », « fin ambigue ») ne voyagent que dans le prompt ; aucun contrôle ne vérifie qu'elles sont tenues. La borne numérique est dure, la contrainte de forme est une espérance | `catalog/agents/shot-list.yamlld` (prompt), absence de vérificateur | M4 (avec D23, quand le multimodal verra les rushes) |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles

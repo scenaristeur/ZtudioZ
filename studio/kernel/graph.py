@@ -17,6 +17,7 @@ NODE_KEYS = {
     "type",
     "needs",
     "foreach",
+    "limit",
     "parallel",
     "on_item_failure",
     "question",
@@ -38,6 +39,8 @@ class Node:
     agent_id: str | None
     needs: tuple[str, ...] = ()
     foreach: str | None = None
+    limit: int | str | None = None
+    limit_optional: bool = False
     parallel: int | None = None
     on_item_failure: str = "fail"
     is_gate: bool = False
@@ -80,6 +83,35 @@ class Graph:
         return levels
 
 
+def _check_limit(
+    node_id: str, value: object, declared: dict
+) -> tuple[int | str | None, bool]:
+    """Valide une borne de fan-out et dit si sa racine est licitement absente.
+
+    Retourne (borne, racine_optionnelle). Une borne invalide est refusee au
+    chargement : mieux vaut echouer avant d'avoir paye un appel que de laisser
+    courir un fan-out malmonte. Une racine declaree optionnelle dans le workflow
+    pourra disparaitre a l'execution sans que ce soit une faute de frappe.
+    """
+    if value is None:
+        return None, False
+    if isinstance(value, bool):
+        raise GraphError(f"noeud {node_id}: limit doit etre un entier ou une reference")
+    if isinstance(value, int):
+        if value < 1:
+            raise GraphError(f"noeud {node_id}: limit doit etre >= 1")
+        return value, False
+    text = str(value)
+    if not (text.startswith("${") and text.endswith("}")):
+        raise GraphError(
+            f"noeud {node_id}: limit doit etre un entier ou une reference ${{...}}: {text}"
+        )
+    root = text[2:-1].strip().split(".")[0]
+    spec = declared.get(root)
+    optional = root in declared and not (isinstance(spec, dict) and spec.get("required"))
+    return text, optional
+
+
 def build_graph(workflow: dict, registry: "Registry") -> Graph:
     """Construit et valide le graphe d'un workflow."""
     raw_nodes = workflow.get("nodes") or []
@@ -118,12 +150,18 @@ def build_graph(workflow: dict, registry: "Registry") -> Graph:
                     raise GraphError(f"noeud {node_id}: agent inconnu: {ref}")
                 agent_id = resolved
 
+        limit, limit_optional = _check_limit(
+            node_id, raw.get("limit"), workflow.get("inputs") or {}
+        )
+
         nodes.append(
             Node(
                 id=node_id,
                 agent_id=agent_id,
                 needs=tuple(expand_list(raw.get("needs"))),
                 foreach=raw.get("foreach"),
+                limit=limit,
+                limit_optional=limit_optional,
                 parallel=raw.get("parallel"),
                 on_item_failure=raw.get("on_item_failure", "fail"),
                 is_gate=is_gate,

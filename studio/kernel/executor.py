@@ -12,7 +12,7 @@ import jsonschema
 from .artifacts import ArtifactStore, Binary, canonical
 from .context import expand_list
 from .dispatch import ToolContext, run_tool
-from .errors import BudgetError, GateError, LoadError, SchemaError
+from .errors import BudgetError, GateError, GraphError, LoadError, SchemaError
 from .graph import Graph, Node
 from .journal import Journal
 from .registry import Registry
@@ -266,6 +266,16 @@ class Executor:
             items = self._resolve(node.foreach, self._scope(node, inputs, values))
             if not isinstance(items, list):
                 raise SchemaError(f"noeud {node.id}: foreach attend une liste")
+            bound = self._resolve_limit(node, inputs, values)
+            if bound is not None and bound < len(items):
+                self.journal.append(
+                    "items_truncated",
+                    run=run_id,
+                    node=node.id,
+                    produced=len(items),
+                    kept=bound,
+                )
+                items = items[:bound]
             semaphore = asyncio.Semaphore(node.parallel or self.max_parallel)
 
             async def one(index: int, item: Any) -> Any:
@@ -320,6 +330,40 @@ class Executor:
 
         scope = self._scope(node, inputs, values)
         return await self._exec_agent(node, agent, scope, run_id, node.id)
+
+    def _resolve_limit(
+        self, node: Node, inputs: dict[str, Any], values: dict[str, Any]
+    ) -> int | None:
+        """Resout la borne de fan-out d'un noeud, exprimee en nombre ou en reference.
+
+        La borne porte la contrainte du brief jusqu'au decoupage : un LLM qui
+        surcompte les plans ne peut pas faire payer au-dela de ce que l'humain a
+        valide. Deux cas distingue :
+
+        - la racine n'est declaree nulle part : erreur de graphe, on refuse de
+          deviner ce que l'auteur voulait borner ;
+        - la racine est un entree optionnelle du workflow, ou la feuille manque
+          sous une racine resolue : pas de borne, on ne tronque pas ce qui
+          n'est pas contraint.
+        """
+        if node.limit is None:
+            return None
+        if isinstance(node.limit, int):
+            return node.limit
+
+        path = node.limit.strip()[2:-1].split(".")
+        current: Any = self._scope(node, inputs, values)
+        for depth, part in enumerate(path):
+            if not isinstance(current, dict) or part not in current:
+                if depth == 0 and not node.limit_optional:
+                    raise LoadError(f"noeud {node.id}: reference non resolue: {node.limit}")
+                return None
+            current = current[part]
+
+        bound = current
+        if isinstance(bound, bool) or not isinstance(bound, int) or bound < 1:
+            raise GraphError(f"noeud {node.id}: limit resolue invalide: {bound!r}")
+        return bound
 
     def _scope(
         self,
