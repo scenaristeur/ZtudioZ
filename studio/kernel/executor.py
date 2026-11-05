@@ -408,6 +408,7 @@ class Executor:
             return await self._exec_tool(node, agent, scope, run_id, unit)
 
         resolved = self._resolve_inputs(agent, scope)
+        images = self._vision_images(agent, resolved)
         cache_key = self.store.key(
             [node.id, agent["@id"], agent.get("version", 1), agent.get("model", ""),
              agent.get("prompt", ""), resolved, scope.get("item")]
@@ -439,6 +440,7 @@ class Executor:
                 prompt=json.dumps(resolved, ensure_ascii=False, sort_keys=True),
                 schema=self._output_schema(agent),
                 output_key=self._output_key(agent),
+                images=images,
             )
 
         if not isinstance(produced, dict):
@@ -769,6 +771,27 @@ class Executor:
             for nested in value:
                 found.extend(Executor._embedded(nested))
         return found
+
+    def _vision_images(self, agent: dict, resolved: dict[str, Any]) -> list | None:
+        """Charge les binaires des images declarees en entree d'un agent texte.
+
+        Convention D23 : un agent qui declare `images` recoit les pixels, pas
+        seulement des references d'artefacts. Les autres agents texte gardent
+        un prompt JSON pur.
+        """
+        if "images" not in (agent.get("inputs") or {}):
+            return None
+        value = resolved.get("images")
+        if value is None:
+            return None
+        refs = value if isinstance(value, list) else [value]
+        images = []
+        for ref in refs:
+            for hash_ in self._embedded(ref):
+                binary = self.store.get(hash_)
+                if str(getattr(binary, "media_type", "")).startswith("image/"):
+                    images.append(binary)
+        return images or None
 
     def _reference(self, resolved: dict[str, Any]) -> Any:
         """Charge le premier artefact binaire consomme, comme reference de generation."""

@@ -23,6 +23,7 @@ class Provider(Protocol):
         prompt: str,
         schema: dict | None = None,
         output_key: str | None = None,
+        images: list | None = None,
     ) -> dict:
         """Produit une sortie structuree pour un agent."""
 
@@ -62,13 +63,26 @@ class MockProvider:
         prompt: str,
         schema: dict | None = None,
         output_key: str | None = None,
+        images: list | None = None,
     ) -> dict:
         """Retourne la reponse pre-enregistree ou genere une reponse par defaut."""
         self._active += 1
         self.max_concurrency = max(self.max_concurrency, self._active)
         self.calls += 1
         self.records.append(
-            {"agent": agent_id, "model": model, "system": system, "prompt": prompt}
+            {
+                "agent": agent_id,
+                "model": model,
+                "system": system,
+                "prompt": prompt,
+                "images": [
+                    {
+                        "hash": getattr(image, "hash", ""),
+                        "media_type": getattr(image, "media_type", ""),
+                    }
+                    for image in (images or [])
+                ],
+            }
         )
         try:
             if self.delay:
@@ -170,6 +184,7 @@ class OpenAICompatProvider:
         prompt: str,
         schema: dict | None = None,
         output_key: str | None = None,
+        images: list | None = None,
     ) -> dict:
         """Appelle l'API et retourne le JSON parse, valide par le noyau."""
         import json
@@ -184,10 +199,11 @@ class OpenAICompatProvider:
             "temperature": self.temperature,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": self._message_content(prompt, images)},
             ],
         }
-        if schema is not None:
+        # Les modeles vision d'Albert n'exposent pas forcement le mode JSON.
+        if schema is not None and not images:
             body["response_format"] = {"type": "json_object"}
 
         request = urllib.request.Request(
@@ -201,7 +217,41 @@ class OpenAICompatProvider:
         with urllib.request.urlopen(request, timeout=120) as response:
             payload = json.loads(response.read().decode("utf-8"))
         content = payload["choices"][0]["message"]["content"]
-        return json.loads(content)
+        return self._parse_json(content)
+
+    @staticmethod
+    def _message_content(prompt: str, images: list | None = None):
+        """Contenu texte, ou contenu multimodal si des images sont fournies."""
+        if not images:
+            return prompt
+        import base64
+
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for image in images:
+            media_type = getattr(image, "media_type", "image/png")
+            data = getattr(image, "data", b"")
+            encoded = base64.b64encode(data).decode("ascii")
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media_type};base64,{encoded}"},
+                }
+            )
+        return content
+
+    @staticmethod
+    def _parse_json(content: str) -> dict:
+        """JSON strict, avec repli sur le premier objet d'une reponse enrobee."""
+        import json
+
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            start = content.find("{")
+            end = content.rfind("}")
+            if start >= 0 and end > start:
+                return json.loads(content[start : end + 1])
+            raise
 
 
 __all__ = ["Provider", "MockProvider", "OpenAICompatProvider"]

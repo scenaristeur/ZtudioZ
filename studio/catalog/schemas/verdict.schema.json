@@ -12,6 +12,39 @@
         {"type": "string"},
         {"type": "array", "items": {"type": "string", "minLength": 1}}
       ]
+    },
+    "constraints": {
+      "type": "array",
+      "description": "Une entree par contrainte freeform du brief, jugee sur les images.",
+      "items": {
+        "type": "object",
+        "required": ["text", "respected"],
+        "additionalProperties": false,
+        "properties": {
+          "text": {"type": "string", "minLength": 1},
+          "respected": {"type": "boolean"},
+          "evidence": {"type": "string"}
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["constraints"],
+        "properties": {
+          "constraints": {
+            "contains": {
+              "type": "object",
+              "required": ["respected"],
+              "properties": {"respected": {"const": false}}
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {"ok": {"const": false}}
+      }
+    }
+  ]
 }
