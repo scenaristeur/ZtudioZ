@@ -134,6 +134,9 @@ export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
   **`mock` produit des PNG unis de 8×8** : c'est un placeholder de test, jamais un rendu.
   Le prompt image porte le plan, l'ancre `reference` et les contraintes `freeform` du brief ;
   un `retry` de `gate_images` avec feedback regénère réellement les images.
+  Pour l'ancrage visuel, configurer `ref_model: gptimage` et `strict_refs: true` : une
+  référence passe alors par `gen.pollinations.ai` avec `image=URL` ; plusieurs références
+  passent par le POST JSON en liste. `flux` seul est texte→image et ignore les pixels.
 - Vidéos : `--video-provider pollinations` (`wan-fast` défaut, ~0,01 $/s ; `grok-video-pro`
   ~0,05 $/s via `STUDIO_VIDEO_MODEL`). Facturé à la seconde, budget refusé avant l'appel.
 - Vision : le `continuity-checker` utilise `gemma-4-31b-it` (Albert) et reçoit les **pixels**

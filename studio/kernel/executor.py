@@ -520,6 +520,9 @@ class Executor:
             )
 
         reference = self._reference(resolved)
+        references = self._references(resolved)
+        if references and reference is None:
+            reference = references[0]
         self.journal.append("node_started", run=run_id, node=unit)
         async with self._global:
             binary = await self.image.generate(
@@ -528,6 +531,7 @@ class Executor:
                 system=self._system(agent),
                 prompt=self._image_prompt(resolved),
                 reference=reference,
+                references=references,
             )
 
         name = self._output_key(agent) or "image"
@@ -818,6 +822,20 @@ class Executor:
                 if str(getattr(binary, "media_type", "")).startswith("image/"):
                     images.append(binary)
         return images or None
+
+    def _references(self, resolved: dict[str, Any]) -> list:
+        """Toutes les images binaires referencees par les entrees, dedupliquees."""
+        references = []
+        seen = set()
+        for value in resolved.values():
+            for hash_ in self._embedded(value):
+                if hash_ in seen:
+                    continue
+                seen.add(hash_)
+                binary = self.store.get(hash_)
+                if str(getattr(binary, "media_type", "")).startswith("image/"):
+                    references.append(binary)
+        return references
 
     def _reference(self, resolved: dict[str, Any]) -> Any:
         """Charge le premier artefact binaire consomme, comme reference de generation."""

@@ -33,9 +33,16 @@ def recorder(monkeypatch):
     return calls
 
 
-def run(provider, prompt="phare breton au crepuscule", reference=None):
+def run(provider, prompt="phare breton au crepuscule", reference=None, references=None):
     return asyncio.run(
-        provider.generate(agent_id="a", model="flux", system="", prompt=prompt, reference=reference)
+        provider.generate(
+            agent_id="a",
+            model="flux",
+            system="",
+            prompt=prompt,
+            reference=reference,
+            references=references,
+        )
     )
 
 
@@ -74,16 +81,50 @@ def test_seed_is_deterministic_per_prompt(recorder):
     assert seed1 != seed_b
 
 
-def test_reference_changes_the_seed(recorder):
-    provider = PollinationsImageProvider()
+def test_une_reference_utilise_gen_et_le_modele_image(monkeypatch, recorder):
+    monkeypatch.setattr("studio.tools.public.upload_public", lambda data, name: "https://tmpfiles.org/dl/ref.png")
+    provider = PollinationsImageProvider(ref_model="gptimage")
 
-    sans_ref = run(provider, prompt="plan")
-    seed_without = recorder[0]["url"].split("seed=")[1].split("&")[0]
-    with_ref = run(provider, prompt="plan", reference=Binary(PNG_BYTES, "image/png"))
-    seed_with = recorder[1]["url"].split("seed=")[1].split("&")[0]
+    binary = run(provider, prompt="plan", reference=Binary(PNG_BYTES, "image/png"))
 
-    assert seed_with != seed_without
-    assert with_ref.hash != sans_ref.hash
+    url = recorder[0]["url"]
+    assert "gen.pollinations.ai/image/" in url
+    assert "model=gptimage" in url
+    assert "image=https%3A%2F%2Ftmpfiles.org%2Fdl%2Fref.png" in url
+    assert binary.data[:3] == b"\xff\xd8\xff"
+
+
+def test_plusieurs_references_passent_par_le_post_json(monkeypatch):
+    import base64
+
+    calls = []
+
+    def fake_post(url, payload, token=None, timeout=300.0):
+        calls.append({"url": url, "payload": payload, "token": token})
+        return {"data": [{"b64_json": base64.b64encode(PNG_BYTES).decode()}]}
+
+    monkeypatch.setattr("studio.tools.public.upload_public", lambda data, name: f"https://tmpfiles.org/dl/{name}")
+    monkeypatch.setattr(images, "_http_post_json", fake_post)
+    provider = PollinationsImageProvider(ref_model="gptimage", multi_ref_model="gptimage")
+
+    binary = run(
+        provider,
+        prompt="plan",
+        references=[Binary(PNG_BYTES, "image/png"), Binary(JPEG_BYTES, "image/jpeg")],
+    )
+
+    assert binary.media_type == "image/png"
+    assert calls[0]["url"].endswith("/v1/images/generations")
+    assert calls[0]["payload"]["model"] == "gptimage"
+    assert len(calls[0]["payload"]["image"]) == 2
+
+
+def test_strict_refs_refuse_un_modele_sans_reference(monkeypatch):
+    monkeypatch.setattr("studio.tools.public.upload_public", lambda data, name: "https://tmpfiles.org/dl/ref.png")
+    provider = PollinationsImageProvider(ref_model="flux", strict_refs=True)
+
+    with pytest.raises(RuntimeError, match="strict_refs"):
+        run(provider, prompt="plan", reference=Binary(PNG_BYTES, "image/png"))
 
 
 def test_api_key_is_forwarded_when_present(monkeypatch, recorder):

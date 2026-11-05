@@ -39,6 +39,7 @@ ALLOWED_OPTIONS = {
     ("image", "mock"): {"cost", "delay"},
     ("image", "pollinations"): {
         "base", "model", "api_key_env", "width", "height", "cost", "max_retries", "min_interval",
+        "ref_base", "ref_model", "multi_ref_model", "strict_refs",
     },
     ("image", "openai"): {"model", "base_url", "api_key_env", "size", "cost"},
     ("video", "mock"): {"cost_per_second", "delay", "size"},

@@ -16,11 +16,12 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from studio.kernel.artifacts import Binary
+
+from .public import upload_public as _upload_public
 
 USER_AGENT = "ztudioz-studio/0.1"
 
@@ -129,43 +130,6 @@ class MockVideoProvider:
             return await asyncio.to_thread(_color_clip, digest[:3].hex(), float(duration), self.size)
         finally:
             self._active -= 1
-
-
-def _upload_public(data: bytes, filename: str, expire: int = 172800) -> str:
-    """Rend une image publiquement joignable (exigence des APIs video).
-
-    C'est un export vers un tiers (tmpfiles.org) : le noyau ne l'appelle que
-    lorsqu'un provider reel le demande, jamais en mock.
-    """
-    boundary = uuid.uuid4().hex
-    body = b"".join(
-        [
-            f"--{boundary}\r\n".encode(),
-            f'Content-Disposition: form-data; name="expire"\r\n\r\n{expire}\r\n'.encode(),
-            f"--{boundary}\r\n".encode(),
-            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode(),
-            b"Content-Type: application/octet-stream\r\n\r\n",
-            data,
-            b"\r\n",
-            f"--{boundary}--\r\n".encode(),
-        ]
-    )
-    request = urllib.request.Request(
-        "https://tmpfiles.org/api/v1/upload",
-        data=body,
-        headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": USER_AGENT,
-        },
-    )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    page_url = payload["data"]["url"]
-    page_request = urllib.request.Request(page_url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(page_request, timeout=30) as response:
-        page = response.read().decode("utf-8", "replace")
-    match = re.search(r'tmpfiles\.org(/dl/[^"\']+)', page)
-    return "https://tmpfiles.org" + match.group(1) if match else page_url
 
 
 class PollinationsVideoProvider:

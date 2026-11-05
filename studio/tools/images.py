@@ -32,6 +32,7 @@ class ImageProvider(Protocol):
         system: str,
         prompt: str,
         reference: Binary | None = None,
+        references: list[Binary] | None = None,
     ) -> Binary:
         """Produit une image binaire pour un agent."""
 
@@ -88,8 +89,10 @@ class MockImageProvider:
         system: str,
         prompt: str,
         reference: Binary | None = None,
+        references: list[Binary] | None = None,
     ) -> Binary:
-        """Retourne un PNG dont la couleur derive du prompt et de la reference."""
+        """Retourne un PNG dont la couleur derive du prompt et des references."""
+        refs = references or ([reference] if isinstance(reference, Binary) else [])
         self._active += 1
         self.max_concurrency = max(self.max_concurrency, self._active)
         self.calls += 1
@@ -99,14 +102,14 @@ class MockImageProvider:
                 "model": model,
                 "prompt": prompt,
                 "reference": reference.hash if isinstance(reference, Binary) else None,
+                "references": [ref.hash for ref in refs],
             }
         )
         try:
             if self.delay:
                 await asyncio.sleep(self.delay)
             seed = hashlib.sha256(
-                prompt.encode("utf-8")
-                + (reference.data if isinstance(reference, Binary) else b"")
+                prompt.encode("utf-8") + b"".join(ref.data for ref in refs)
             ).digest()
             return Binary(encode_png(self.size[0], self.size[1], (seed[0], seed[1], seed[2])), self.media_type)
         finally:
@@ -152,8 +155,13 @@ class OpenAICompatImageProvider:
         system: str,
         prompt: str,
         reference: Binary | None = None,
+        references: list[Binary] | None = None,
     ) -> Binary:
-        """Appelle /images/generations et retourne les octets decodes."""
+        """Appelle /images/generations et retourne les octets decodes.
+
+        Cet adaptateur ne transmet pas encore les references : le contrat les
+        accepte pour rester compatible, mais le provider doit les supporter.
+        """
         import json
 
         import urllib.request
@@ -189,11 +197,14 @@ class OpenAICompatImageProvider:
 
 
 class PollinationsImageProvider:
-    """Adaptateur reel (https://image.pollinations.ai) : GET encode, type de media sniff er.
+    """Adaptateur reel Pollinations : texte->image, et image(s)->image via gptimage.
 
-    La cle API, si presente, voyage en en-tete — jamais dans l'URL. La graine derive
-    du prompt et de la reference : deux relances du meme plan produisent la meme image.
+    Sans reference : route GET `image.pollinations.ai/prompt/...` (flux).
+    Avec reference(s) : route `gen.pollinations.ai` avec `image=URL` (gptimage),
+    ou POST `/v1/images/generations` avec une liste d'images pour le multi-ref.
     """
+
+    REF_SUPPORT = {"gptimage", "gpt-image-2", "gptimage-large"}
 
     def __init__(
         self,
@@ -205,6 +216,10 @@ class PollinationsImageProvider:
         cost: float = 0.0,
         max_retries: int = 5,
         min_interval: float = 45.0,
+        ref_base: str = "https://gen.pollinations.ai",
+        ref_model: str = "gptimage",
+        multi_ref_model: str = "gptimage",
+        strict_refs: bool = False,
     ):
         self.base = base.rstrip("/")
         self.model = model
@@ -214,12 +229,26 @@ class PollinationsImageProvider:
         self.cost = cost
         self.max_retries = max_retries
         self.min_interval = min_interval
+        self.ref_base = ref_base.rstrip("/")
+        self.ref_model = ref_model
+        self.multi_ref_model = multi_ref_model
+        self.strict_refs = strict_refs
         self._gate = asyncio.Lock()
         self._last_call: float | None = None
 
     def estimate(self) -> float:
         """Cout declare par image ; Pollinations est gratuit sous quota."""
         return self.cost
+
+    async def _pace(self) -> None:
+        import time
+
+        now = time.monotonic()
+        if self._last_call is not None and self.min_interval > 0:
+            wait = self.min_interval - (now - self._last_call)
+            if wait > 0:
+                await asyncio.to_thread(_sleep, wait)
+        self._last_call = time.monotonic()
 
     async def generate(
         self,
@@ -229,32 +258,91 @@ class PollinationsImageProvider:
         system: str,
         prompt: str,
         reference: Binary | None = None,
+        references: list[Binary] | None = None,
     ) -> Binary:
-        """Telecharge l'image en respectant le rythme annonce — un appel a la fois."""
+        """Genere une image ; les references sont reellement envoyees si fournies."""
+        refs = [
+            ref
+            for ref in (references or [])
+            if isinstance(ref, Binary) and str(ref.media_type).startswith("image/")
+        ]
+        if not refs and isinstance(reference, Binary):
+            refs = [reference]
+        if refs:
+            return await self._generate_with_refs(prompt, model, refs)
+        return await self._generate_text(prompt)
+
+    async def _generate_text(self, prompt: str) -> Binary:
         import hashlib
         from urllib.parse import quote
 
-        ref_hash = reference.hash if isinstance(reference, Binary) else ""
-        seed = int.from_bytes(hashlib.sha256(f"{prompt}|{ref_hash}".encode()).digest()[:8], "big")
+        seed = int.from_bytes(hashlib.sha256(prompt.encode()).digest()[:8], "big") % 2147483647
         url = (
             f"{self.base}/prompt/{quote(prompt, safe='')}"
             f"?model={self.model}&width={self.width}&height={self.height}"
             f"&seed={seed}&nologo=true&safe=true"
         )
         api_key = os.environ.get(self.api_key_env, "") if self.api_key_env else ""
+        async with self._gate:
+            await self._pace()
+            return await self._fetch(url, api_key or None)
+
+    async def _generate_with_refs(self, prompt: str, model: str, refs: list[Binary]) -> Binary:
+        import hashlib
+        from urllib.parse import quote
+
+        ref_model = model if model in self.REF_SUPPORT else self.ref_model
+        if ref_model not in self.REF_SUPPORT:
+            if self.strict_refs:
+                raise RuntimeError(
+                    f"strict_refs: le modele {ref_model} ne supporte pas les references image"
+                )
+            ref_model = "gptimage"
+
+        from .public import upload_public
+
+        urls = [
+            await asyncio.to_thread(
+                upload_public, ref.data, f"{ref.hash}{_media_suffix(ref.media_type)}"
+            )
+            for ref in refs
+        ]
+        seed = int.from_bytes(
+            hashlib.sha256(
+                prompt.encode() + b"".join(ref.data for ref in refs)
+            ).digest()[:8],
+            "big",
+        ) % 2147483647
+        api_key = os.environ.get(self.api_key_env, "") if self.api_key_env else ""
 
         async with self._gate:
-            import time
-
-            now = time.monotonic()
-            if self._last_call is not None and self.min_interval > 0:
-                wait = self.min_interval - (now - self._last_call)
-                if wait > 0:
-                    await asyncio.to_thread(_sleep, wait)
-            try:
+            await self._pace()
+            if len(urls) == 1:
+                url = (
+                    f"{self.ref_base}/image/{quote(prompt, safe='')}"
+                    f"?model={ref_model}&width={self.width}&height={self.height}"
+                    f"&seed={seed}&nologo=true&image={quote(urls[0], safe='')}"
+                )
+                if api_key:
+                    url += f"&key={quote(api_key, safe='')}"
                 return await self._fetch(url, api_key or None)
-            finally:
-                self._last_call = time.monotonic()
+
+            payload = {
+                "model": self.multi_ref_model or ref_model,
+                "prompt": prompt,
+                "n": 1,
+                "image": urls,
+                "response_format": "b64_json",
+                "size": f"{self.width}x{self.height}",
+            }
+            data = await asyncio.to_thread(
+                _http_post_json, f"{self.ref_base}/v1/images/generations", payload, api_key or None
+            )
+            try:
+                raw = base64.b64decode(data["data"][0]["b64_json"])
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError(f"pollinations multiref: reponse invalide: {data}") from exc
+            return Binary(raw, _detect_media_type(raw, ""))
 
     async def _fetch(self, url: str, api_key: str | None) -> Binary:
         import urllib.error
@@ -278,6 +366,29 @@ class PollinationsImageProvider:
                 continue
             break
         raise RuntimeError(f"pollinations: echec ({last_exc})") from last_exc
+
+
+def _media_suffix(media_type: str) -> str:
+    return {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+    }.get(str(media_type), ".png")
+
+
+def _http_post_json(url: str, payload: dict, token: str | None = None, timeout: float = 300.0) -> dict:
+    """POST JSON minimal ; separe pour que les tests restent hors reseau."""
+    import json
+    import urllib.request
+
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"), headers=headers
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def _http_get(url: str, token: str | None = None, timeout: float = 120.0) -> tuple[bytes, str]:
