@@ -14,8 +14,21 @@ description: >-
 # Studio v3 — assistant de production déclaratif
 
 Le projet n'est pas un dossier `projets/` (v1) : **un projet = un dossier de runs**.
-Tout l'état est là : `runs/<slug>/journal.jsonl` (histoire append-only) et
-`runs/<slug>/artifacts/` (livrables adressés par hash de contenu, jamais écrasés).
+Tout l'état est là : `studio.yaml` (config), `journal.jsonl` (histoire append-only) et
+`artifacts/` (livrables adressés par hash de contenu, jamais écrasés).
+
+```yaml
+# <projet>/studio.yaml — aucun secret ici, seulement des noms de variables
+name: feu-follet
+providers:
+  llm:   {kind: openai, model: openai/gpt-oss-120b, base_url: ${OPENAI_BASE_URL}}
+  image: {kind: pollinations, model: flux, width: 256, height: 256}
+  video: {kind: pollinations, model: wan-fast, width: 512, height: 512}
+```
+
+Avec `--project <dossier>`, la CLI lit cette config, écrit artefacts et journal dans le
+projet, et n'exige plus aucun flag provider. Les flags restent des overrides explicites.
+Sans `--project`, `--runs` et les flags fonctionnent comme avant (défaut mock).
 
 ## Règles permanentes
 

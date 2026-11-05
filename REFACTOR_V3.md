@@ -4,11 +4,12 @@
 > consultable dans le dépôt principal : `/home/smag/dev/ZtudioZ/REFACTOR_V3.md` (branche
 > `main`). C'est ici que l'on met à jour l'avancement, les décisions et la dette technique.
 >
-> **Statut** : **M0 + M1 + M2 réalisés** — noyau complet, artefacts binaires typés et lignés,
-> adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par ffprobe,
-> échec d'item borné, sous-workflows, retry de gate, SIGINT, 156 tests verts, démos CLI
+> **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
+> et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 167 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
-> Pollinations pour les images, RIA respecte les quotas annoncés).
+> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 livrée** : un projet
+> porte sa config (`studio.yaml`) et ses providers, la CLI écrit dans le projet.
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
@@ -157,8 +158,9 @@ studio/
     skills/<id>/SKILL.md packs de connaissance injectés dans les prompts
     schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
-  cli.py           run | journal | validate | invalidate | --skills-root
-tests/             26 fichiers, 156 tests
+  cli.py           run | journal | validate | invalidate | --skills-root | --project
+  project.py       studio.yaml -> providers + racine artefacts/journal
+tests/             27 fichiers, 167 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -443,6 +445,23 @@ M0 à M2 sont **autonomes** : ils ne dépendent d'aucun fichier de la v1.
 Le rattrapage du signal est reporté en M2, quand des runs longs existeront vraiment — **clos
 en M2** : `Ctrl-C` sort 130, le journal permet de reprendre, test subprocess à l'appui.
 
+### 7.1 Découpage M3 — intégration v1
+
+Le critère du palier est un projet réel qui avance d'un palier à l'autre depuis la CLI **et**
+depuis le web. Le travail est découpé en tranches démontrables, chacune TDD :
+
+| # | Tranche | Critère de démonstration | Dettes |
+|---|---|---|---|
+| 1 | **Projet + config providers** : `studio.yaml`, résolution `${VAR}`, providers construits depuis le projet, `run --project` | un run mock M2 s'écrit dans le projet, sans flag provider | — |
+| 2 | **Contexte projet hérité** : brief, contraintes et référence portés par le projet, injectés sans redéclaration à chaque nœud | changer le brief du projet invalide l'aval sans toucher aux workflows | D25 |
+| 3 | **Enchaînement des paliers** : M0 → M1 → M2 depuis la CLI, gates humaines inchangées | un projet avance jusqu'au montage, reprise après `Ctrl-C` comprise | D10 |
+| 4 | **API** : projets, runs, journal, artefacts, réponse aux gates | le journal d'un run est lisible en HTTP, une gate se répond sans CLI | D11, D16 |
+| 5 | **Web** : UI pilotée par le graphe, plus de vues par étape | une gate se voit et se répond dans le navigateur | D22 |
+| 6 | **Clôture M3** : coûts réels, toolkit v1 exposé, replay | un run réel se pilote de bout en bout depuis le web | D11, D22, D30 |
+
+Le stockage public de la vidéo reste `tmpfiles.org` : décision humaine du 2026-11-05,
+consignée en D30. Un stockage maîtrisé est repoussé à M4.
+
 ---
 
 ## 8. Méthode — TDD, sans exception
@@ -545,6 +564,18 @@ Tests ajoutés pour la gate avant les clips de `m2-montage` — **+2 tests, 156 
 La gate s'ajoute au repli `m2-montage` : le chemin normal `m2-video` avait déjà sa gate avant
 dépense, le repli pouvait encore fabriquer des clips avant toute validation humaine.
 
+Tests ajoutés pour la tranche M3.1 (projet + providers) — **+11 tests, 167 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_project.py` (config) | 7 | nom et providers lus, nom par défaut = dossier, `${VAR}` interpolé, variable absente refusée, kind inconnu refusé, terme inconnu refusé, config absente refusée |
+| `test_project.py` (providers) | 2 | les kinds construisent les bons adaptateurs (mock, pollinations, openai) avec leurs options |
+| `test_project.py` (CLI) | 2 | `--project` écrit artefacts et journal dans le projet sans flag provider ; une config invalide sort en erreur |
+
+La config ne contient aucun secret : elle nomme les variables (`api_key_env`), les clés
+restent dans l'environnement. Les flags `--provider`, `--image-provider`, `--video-provider`
+restent des overrides explicites au-dessus de la config.
+
 ---
 
 ## 9. Garde-fous
@@ -606,7 +637,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 156 passed
+.venv/bin/python -m pytest tests/      # 167 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -679,6 +710,8 @@ condition de :
 | 2026-11-05 | run réel | Deuxième appel : **400 Pollinations**, corps enfin lisible — le `seed` sur 64 bits dépasse `2147483647`. Test rouge, seed ramené modulo 2³¹−1. Les deux échecs n'ont rien coûté : aucune vidéo produite | assistant |
 | 2026-11-05 | run réel | **2 vidéos `wan-fast` en 8 min 21 s** : h264 512×512, 5,03 s, 161 images chacune, 0,1000 journalisé. Gates humaines : fiches → clips → montage. Montage `concat` : 10,06 s, 322 images, 536 Ko. `probe` : h264, 10,063 s, 1 flux. **154 verts** | assistant + humain |
 | 2026-11-05 | M2 vidéo | **Gate avant les clips sur le repli `m2-montage`** : le chemin normal avait sa gate avant dépense, le repli fabriquait encore ses clips avant toute validation. 2 tests rouges (contrat de graphe + aucun mp4 avant réponse), `gate_clips` en tête, nœud `clips` en `needs`, **156 verts**. Démo : bloque sur `gate_clips`, `continue` → gate_montage, `continue` → probe h264 | assistant |
+| 2026-11-05 | M3 | **Décisions humaines** : D30 tranché — `tmpfiles.org` accepté pour les runs vidéo réels, stockage maîtrisé et réconciliation repoussés à M4. Le WIP `brief-synthesizer` est commité par l'humain (`1e8463a`). M3 découpé en 6 tranches (section 7.1) | humain |
+| 2026-11-05 | M3.1 | **Projet + config providers** : 11 tests rouges d'abord, **167 verts**. `studio.yaml` (nom, providers llm/image/video), interpolation `${VAR}` stricte, kinds mock/openai/pollinations, construction des adaptateurs, CLI `--project` (artefacts, journal et providers lus depuis le projet ; `journal` et `invalidate` aussi). Aucun secret dans la config. Démo : un run `m2-montage` mock s'écrit dans `/tmp/.../demo-project` | assistant |
 
 ---
 
@@ -721,7 +754,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D29, D30.
 | ~~D27~~ | ~~`shots.schema.json` exigeait `minItems: 3`~~ | **clos (trouvé par le run réel du 2026-11-05)** : le LLM produisait 2 plans conformes à `constraints.max_shots`, le schéma refusait (`is too short`). Le schéma contredisait la contrainte que D24 venait d'implémenter. `minItems: 1`, 2 tests : 2 plans valides, liste vide toujours refusée | — |
 | D28 | **Le `continuity-checker` est affamé** : il ne déclare que `images` en entrée et le nœud `verdict` ne dépend que de `images` + la gate. Il ne reçoit ni `shots`, ni `reference`, ni `brief`, donc son verdict est structurellement vide : `ok=false`, « impossible d'évaluer, fournissez le brief ». Distinct de D23 (absence de pixels) : même comme proxy texte il n'a rien à comparer | `catalog/agents/continuity-checker.yamlld`, `workflows/m1-scene.yamlld` (nœud `verdict`) | **clos** : `shots` (requis) et `brief` (optionnel) entrent dans l'agent, `verdict` dépend de `shots` ; 7 tests, vérifié en réel (`ok=true`, constats sourcés « d'après les prompts ») |
 | D29 | **Pas de mapping d'entrées au niveau du nœud** : `inputs:` et `outputs:` figurent dans `NODE_KEYS` donc sont **acceptés, puis ignorés** — un auteur qui croit renommer une entrée n'obtient rien. Et collision de noms : la sortie `reference` du nœud `ref_image` (objet artefact) **écrase** dans la portée fusionnée l'entrée texte `reference` de l'humain ; tout nœud qui dépend de `ref_image` perd l'ancre textuelle (d'où D28 limité à `shots` + `brief`) | `graph.NODE_KEYS`, `executor._scope` | à trancher : rejeter au chargement (fail fast) ou implémenter le mapping |
-| D30 | **La vidéo réelle dépend d'un tiers et d'un export** : Pollinations exige une image publiquement joignable, donc `tmpfiles.org` reçoit chaque image de plan (URL 48 h) ; aucun chemin local (serveur Agnes `:8765` absent). La génération part d'une image 256 px et sort en 512 : upscale assumé. Le coût (~0,01 $/s) est estimé et journalisé, jamais réconcilié avec la facture réelle | `tools/video.py` (`_upload_public`), `catalog/agents/video-maker.yamlld` | M3 : provider local ou stockage public maîtrisé, et réconciliation des coûts |
+| D30 | **La vidéo réelle dépend d'un tiers et d'un export** : Pollinations exige une image publiquement joignable, donc `tmpfiles.org` reçoit chaque image de plan (URL 48 h) ; aucun chemin local (serveur Agnes `:8765` absent). La génération part d'une image 256 px et sort en 512 : upscale assumé. Le coût (~0,01 $/s) est estimé et journalisé, jamais réconcilié avec la facture réelle | `tools/video.py` (`_upload_public`), `catalog/agents/video-maker.yamlld` | **décision 2026-11-05 : tmpfiles accepté pour les runs réels** ; stockage maîtrisé et réconciliation des coûts repoussés à M4 |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles

@@ -13,6 +13,7 @@ from .kernel.context import short_iri
 from .kernel.executor import Executor
 from .kernel.journal import Journal
 from .kernel.registry import STUDIO_ROOT, load_registry
+from .project import Project, ProjectError
 from .tools.images import (
     MockImageProvider,
     OpenAICompatImageProvider,
@@ -75,6 +76,20 @@ def _build_video_provider(name: str):
     raise SystemExit(f"provider de videos inconnu: {name}")
 
 
+def _load_project(args) -> Project | None:
+    if not args.project:
+        return None
+    try:
+        return Project.load(args.project)
+    except ProjectError as exc:
+        print(f"PROJET INVALIDE: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def _runs_dir(args, project: Project | None) -> Path:
+    return project.root if project is not None else Path(args.runs)
+
+
 def cmd_validate(args) -> int:
     try:
         registry = load_registry(args.root, extra_skill_roots=args.skills_root)
@@ -100,15 +115,34 @@ def cmd_run(args) -> int:
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
     inputs = json.loads(args.input)
     answers = dict(item.split("=", 1) for item in args.answer)
+    project = _load_project(args)
+    runs = _runs_dir(args, project)
+
+    if project is not None:
+        provider = _build_provider(args.provider) if args.provider else project.build("llm")
+        image = (
+            _build_image_provider(args.image_provider)
+            if args.image_provider
+            else project.build("image")
+        )
+        video = (
+            _build_video_provider(args.video_provider)
+            if args.video_provider
+            else project.build("video")
+        )
+    else:
+        provider = _build_provider(args.provider or "mock")
+        image = _build_image_provider(args.image_provider or args.provider or "mock")
+        video = _build_video_provider(args.video_provider or "mock")
 
     executor = Executor(
         registry=registry,
-        provider=_build_provider(args.provider),
-        store=ArtifactStore(Path(args.runs) / "artifacts"),
-        journal=Journal(Path(args.runs) / "journal.jsonl"),
+        provider=provider,
+        store=ArtifactStore(runs / "artifacts"),
+        journal=Journal(runs / "journal.jsonl"),
         answers=answers,
-        image=_build_image_provider(args.image_provider or args.provider),
-        video=_build_video_provider(args.video_provider or "mock"),
+        image=image,
+        video=video,
     )
     try:
         result = asyncio.run(executor.run(args.workflow, inputs))
@@ -137,7 +171,9 @@ def cmd_run(args) -> int:
 
 def cmd_invalidate(args) -> int:
     """D17 : purge active par lignee — l'amont est preserve, l'aval se rejouera."""
-    store = ArtifactStore(Path(args.runs) / "artifacts")
+    project = _load_project(args)
+    runs = _runs_dir(args, project)
+    store = ArtifactStore(runs / "artifacts")
     try:
         purged = store.invalidate(args.hash)
     except Exception as exc:
@@ -150,7 +186,9 @@ def cmd_invalidate(args) -> int:
 
 
 def cmd_journal(args) -> int:
-    for event in Journal(Path(args.runs) / "journal.jsonl").events():
+    project = _load_project(args)
+    runs = _runs_dir(args, project)
+    for event in Journal(runs / "journal.jsonl").events():
         print(json.dumps(event, ensure_ascii=False))
     return 0
 
@@ -159,6 +197,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="studio", description="Runtime d'agents declaratif")
     parser.add_argument("--root", default=str(STUDIO_ROOT))
     parser.add_argument("--runs", default="runs")
+    parser.add_argument("--project", default=None,
+                        help="dossier du projet (studio.yaml) : artefacts, journal et providers")
     parser.add_argument("--skills-root", action="append", default=[],
                         help="racine externe de packs de connaissance (repetable)")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -170,7 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("workflow")
     run.add_argument("--input", default="{}")
     run.add_argument("--answer", action="append", default=[])
-    run.add_argument("--provider", default="mock", choices=["mock", "openai"])
+    run.add_argument("--provider", default=None, choices=["mock", "openai"])
     run.add_argument("--image-provider", default=None, choices=["mock", "openai", "pollinations"])
     run.add_argument("--video-provider", default=None, choices=["mock", "pollinations"])
     run.set_defaults(func=cmd_run)
