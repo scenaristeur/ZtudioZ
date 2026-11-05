@@ -15,7 +15,7 @@ from starlette.exceptions import HTTPException
 from ..kernel.artifacts import ArtifactStore, digest
 from ..kernel.journal import Journal
 from ..project import (
-    Project, ProjectError, missing_inputs, next_step, pending_gate, prepare_inputs,
+    Project, ProjectError, missing_inputs, next_step, pending_gate, prepare_inputs, run_start,
 )
 
 SLUG = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -122,14 +122,6 @@ def start_run(project: Project, registry, workflow_id: str, explicit: dict) -> d
         "inherited": inherited,
         "run_id": run_id,
     }
-
-
-def run_start(events: list[dict], run_id: str) -> tuple[str, dict] | tuple[None, None]:
-    """Workflow et entrees d'origine du run (premier `run_started`)."""
-    for event in events:
-        if event.get("run") == run_id and event.get("type") == "run_started":
-            return event.get("workflow"), dict(event.get("inputs") or {})
-    return None, None
 
 
 def _embedded_hashes(value) -> list[str]:

@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 215 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 217 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -167,7 +167,7 @@ studio/
   web/             UI Vue 3 + Vite pilotee par le graphe (dist servi par l'API)
   cli.py           run | journal | validate | invalidate | serve | --skills-root | --project
   project.py       studio.yaml -> providers + contexte + racine artefacts/journal
-tests/             37 fichiers, 215 tests
+tests/             37 fichiers, 217 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -651,13 +651,13 @@ Tests ajoutés pour les images et le brief — **+3 tests, 207 verts** :
 |---|---|---|
 | `test_image_brief.py` | 3 | le prompt image contient le plan, l'ancre visuelle et les contraintes freeform ; un `retry` de `gate_images` avec feedback regénère réellement les images ; un `retry` de `gate_verdict` rejoue images **et** verdict avec le feedback |
 
-Tests ajoutés pour fiabiliser le CLI — **+8 tests, 215 verts** :
+Tests ajoutés pour fiabiliser le CLI — **+10 tests, 217 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
 | `test_cli_reliability.py` (erreurs) | 4 | JSON `--input` invalide, `--answer` sans `=`, workflow inconnu et entrée requise manquante sortent en erreur propre, sans traceback et **avant** tout run |
 | `test_cli_reliability.py` (gate) | 1 | une réponse de gate hors options est refusée proprement (pas de traceback) |
-| `test_cli_reliability.py` (commandes) | 3 | `next` propose M1 et l'entrée `reference` manquante ; `status` montre le dernier run et la gate ; `journal --run` filtre sur un run |
+| `test_cli_reliability.py` (commandes) | 5 | `next` propose M1 et l'entrée `reference` manquante ; `status` montre le dernier run et la gate ; `journal --run` filtre ; `answer` reprend un run bloqué par `run_id` et refuse une gate qui n'est pas en attente |
 
 Tests ajoutés pour l'enchaînement des paliers depuis l'API — **+1 test, 204 verts** :
 
@@ -745,7 +745,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 215 passed
+.venv/bin/python -m pytest tests/      # 217 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -835,6 +835,7 @@ condition de :
 | 2026-11-05 | M1 | **Le verdict n'était pas actionnable** : après `gate_images=continue`, M1 se terminait sur `verdict`, sans gate. Ajout de `gate_verdict` (`needs: [verdict, images]`) : `continue` clôt M1, `retry` + feedback régénère les images **et** rejoue le contrôleur (gemma), puis repose la gate. `continuity-checker` v9 déclare `feedback`. 1 test ajouté, **207 verts** | assistant |
 | 2026-11-05 | UI | **Verdict affiché et correction proposée** : à `gate_verdict`, l'UI rend le verdict (ok/notes/contraintes avec preuves) et pré-remplit la zone de correction avec les contraintes violées. Le bouton devient « Recommencer les images avec cette correction » ; `graph.gate.retry` expose l'étape à rejouer (`images`). | assistant |
 | 2026-11-05 | CLI | **CLI fiabilisé** : parsing strict de `--input`/`--answer`/`--feedback`, preflight des entrées requises avant tout appel, erreurs `StudioError` sans traceback, `journal --run`, commandes `next` (palier suivant + entrée manquante) et `status` (dernier run, coût, gate). Les gates déjà franchies ne sont plus reposées lors d'une correction en aval. 8 tests, **215 verts** | assistant |
+| 2026-11-05 | opencode | **Pilotage depuis opencode** : agent `studio-operator` + commandes `/studio-status`, `/studio-next`, `/studio-run`, `/studio-answer`, `/studio-journal`, `/studio-validate`. Nouvelle commande CLI `answer <run_id> <gate> <choix>` qui relit workflow et entrées du journal (pas besoin de reconstruire `--input`). 2 tests, **217 verts** | assistant |
 | 2026-11-05 | D26 | **Freeform vérifiable.** Le verdict porte `constraints` (`text`, `respected`, `evidence`) ; le schéma interdit `ok=true` si une contrainte est `respected=false`. Prompt v6 exige une entrée par contrainte freeform. 4 tests. **Vérifié en réel** : Albert rend `ok=false` argumenté et `{"text":"pas de dialogue","respected":true,"evidence":"aucune bulle..."}` | assistant |
 
 ---

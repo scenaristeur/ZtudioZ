@@ -221,6 +221,14 @@ def latest_run(project: "Project") -> dict | None:
     return current
 
 
+def run_start(events: list[dict], run_id: str) -> tuple[str, dict] | tuple[None, None]:
+    """Workflow et entrees d'origine du run (premier `run_started`)."""
+    for event in events:
+        if event.get("run") == run_id and event.get("type") == "run_started":
+            return event.get("workflow"), dict(event.get("inputs") or {})
+    return None, None
+
+
 def pending_gate(events: list[dict], run_id: str) -> dict | None:
     """Derniere gate non repondue d'un run, ou None."""
     gate: dict | None = None

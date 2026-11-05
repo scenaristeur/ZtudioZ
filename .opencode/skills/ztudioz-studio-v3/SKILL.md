@@ -13,6 +13,22 @@ description: >-
 
 # Studio v3 — assistant de production déclaratif
 
+## Depuis opencode
+
+Commandes disponibles (TUI opencode) :
+
+| Commande | Usage |
+|---|---|
+| `/studio-status <projet>` | dernier run, coût, gate, palier suivant |
+| `/studio-next <projet>` | palier suivant + entrées manquantes |
+| `/studio-run <projet> <workflow> [json]` | lance un workflow, s'arrête à la gate |
+| `/studio-answer <projet> <run_id> <gate> <choix> [feedback]` | répond à une gate |
+| `/studio-journal <projet> [run_id]` | journal filtré |
+| `/studio-validate` | valide le catalogue |
+
+L'agent `studio-operator` (mode primary) exécute ces commandes. Il ne répond **jamais** à une
+gate sans choix explicite de l'humain.
+
 Le projet n'est pas un dossier `projets/` (v1) : **un projet = un dossier de runs**.
 Tout l'état est là : `studio.yaml` (config), `journal.jsonl` (histoire append-only) et
 `artifacts/` (livrables adressés par hash de contenu, jamais écrasés).

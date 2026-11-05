@@ -22,6 +22,7 @@ from .project import (
     next_step,
     pending_gate,
     prepare_inputs,
+    run_start,
 )
 from .tools.images import (
     MockImageProvider,
@@ -207,6 +208,39 @@ def cmd_validate(args) -> int:
     return 0
 
 
+def _project_executor(project: Project, registry, answers: dict[str, str] | None = None) -> Executor:
+    return Executor(
+        registry=registry,
+        provider=project.build("llm"),
+        store=ArtifactStore(project.artifacts),
+        journal=Journal(project.journal),
+        answers=answers,
+        image=project.build("image"),
+        video=project.build("video"),
+        context=project.context,
+    )
+
+
+def _print_result(result, executor: Executor) -> int:
+    print(f"run: {result.run_id}")
+    print(f"statut: {result.status}")
+    print(f"noeuds termines: {', '.join(sorted(result.completed)) or '-'}")
+    print(f"cout journalise: {executor.journal.state(result.run_id).cost:.4f}")
+    if result.pending_gate is not None:
+        gate = result.pending_gate
+        print(f"gate: {gate.id}")
+        print(f"question: {gate.question}")
+        print(f"options: {', '.join(gate.options)}")
+        print("relancer avec --answer " + gate.id + "=continue")
+        print("ou corriger avec --answer " + gate.id + "=retry --feedback \"" + gate.id + "=...\"")
+        return 3
+    if result.status == "failed":
+        print(f"erreur: {result.error}", file=sys.stderr)
+        return 1
+    print(json.dumps(result.outputs, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_run(args) -> int:
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
     explicit = _parse_input(args.input)
@@ -270,23 +304,34 @@ def cmd_run(args) -> int:
         print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
         return 130
 
-    print(f"run: {result.run_id}")
-    print(f"statut: {result.status}")
-    print(f"noeuds termines: {', '.join(sorted(result.completed)) or '-'}")
-    print(f"cout journalise: {executor.journal.state(result.run_id).cost:.4f}")
-    if result.pending_gate is not None:
-        gate = result.pending_gate
-        print(f"gate: {gate.id}")
-        print(f"question: {gate.question}")
-        print(f"options: {', '.join(gate.options)}")
-        print("relancer avec --answer " + gate.id + "=continue")
-        print("ou corriger avec --answer " + gate.id + "=retry --feedback \"" + gate.id + "=...\"")
-        return 3
-    if result.status == "failed":
-        print(f"erreur: {result.error}", file=sys.stderr)
-        return 1
-    print(json.dumps(result.outputs, ensure_ascii=False, indent=2))
-    return 0
+    return _print_result(result, executor)
+
+
+def cmd_answer(args) -> int:
+    project = _load_project_or_fail(args)
+    registry = load_registry(args.root, extra_skill_roots=args.skills_root)
+    events = Journal(project.journal).events()
+    workflow_id, inputs = run_start(events, args.run_id)
+    if workflow_id is None:
+        raise StudioError(f"run inconnu: {args.run_id}")
+    gate = pending_gate(events, args.run_id)
+    if gate is None or gate["id"] != args.gate:
+        raise StudioError(f"aucune gate en attente '{args.gate}' pour ce run")
+    if args.choice not in gate["options"]:
+        raise StudioError(
+            f"reponse invalide: {args.choice!r} (attendu: {', '.join(gate['options'])})"
+        )
+    if args.feedback and args.choice != "retry":
+        print("avertissement: --feedback ignore sans choix retry", file=sys.stderr)
+
+    feedback = {args.gate: args.feedback} if args.choice == "retry" else {}
+    executor = _project_executor(project, registry, answers={args.gate: args.choice})
+    try:
+        result = asyncio.run(executor.run(workflow_id, inputs, feedback=feedback))
+    except KeyboardInterrupt:
+        print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
+        return 130
+    return _print_result(result, executor)
 
 
 def cmd_invalidate(args) -> int:
@@ -377,6 +422,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--image-provider", default=None, choices=["mock", "openai", "pollinations"])
     run.add_argument("--video-provider", default=None, choices=["mock", "pollinations"])
     run.set_defaults(func=cmd_run)
+
+    answer = sub.add_parser("answer", help="repond a une gate d'un run bloque")
+    answer.add_argument("run_id")
+    answer.add_argument("gate")
+    answer.add_argument("choice")
+    answer.add_argument("--feedback", default="", help="correction si choice=retry")
+    answer.set_defaults(func=cmd_answer)
 
     journal = sub.add_parser("journal", help="affiche le journal")
     journal.add_argument("--run", default=None, help="filtre sur un run_id")

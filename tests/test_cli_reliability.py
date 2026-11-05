@@ -120,6 +120,34 @@ def test_status_montre_le_run_et_la_gate(tmp_path):
     assert "gate: gate_brief" in status.stdout
 
 
+def test_answer_repond_a_une_gate_par_run_id(tmp_path):
+    root = project(tmp_path)
+    blocked = cli("--project", str(root), "run",
+                  "studio:workflow/m0-conversation", "--input", DISCUSSION)
+    assert blocked.returncode == 3
+    run_id = [line for line in blocked.stdout.splitlines() if line.startswith("run: ")][0].split(": ", 1)[1]
+
+    treatment = cli("--project", str(root), "answer", run_id, "gate_brief", "continue")
+    assert treatment.returncode == 3, treatment.stdout + treatment.stderr
+    assert "gate: gate_treatment" in treatment.stdout
+
+    completed = cli("--project", str(root), "answer", run_id, "gate_treatment", "continue")
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "statut: completed" in completed.stdout
+
+
+def test_answer_refuse_une_gate_qui_n_est_pas_en_attente(tmp_path):
+    root = project(tmp_path)
+    blocked = cli("--project", str(root), "run",
+                  "studio:workflow/m0-conversation", "--input", DISCUSSION)
+    run_id = [line for line in blocked.stdout.splitlines() if line.startswith("run: ")][0].split(": ", 1)[1]
+
+    completed = cli("--project", str(root), "answer", run_id, "gate_treatment", "continue")
+
+    assert completed.returncode == 1
+    assert "aucune gate en attente" in completed.stderr
+
+
 def test_journal_peut_filtrer_un_run(tmp_path):
     root = project(tmp_path)
     completed = cli(
