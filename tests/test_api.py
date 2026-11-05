@@ -168,6 +168,7 @@ def test_api_graphe_du_run(tmp_path):
         gate = next(node for node in graph["nodes"] if node["id"] == "gate_montage")
         assert gate["is_gate"]
         assert gate["options"] == ["continue", "retry", "stop"]
+        assert graph["gate"]["retry"] == "board"
         assert any(node["completed"] for node in graph["nodes"])
         assert graph["levels"]
         clips = next(node for node in graph["nodes"] if node["id"] == "clips")

@@ -240,6 +240,9 @@ def run_graph(project: Project, run_id: str, registry) -> dict:
     state = Journal(project.journal).state(run_id)
     store = ArtifactStore(project.artifacts)
     gate = pending_gate(journal_events, run_id)
+    if gate:
+        gate_node = graph.node(gate["id"])
+        gate["retry"] = gate_node.needs[-1] if gate_node.needs else None
 
     nodes = []
     for node_id in graph.order:

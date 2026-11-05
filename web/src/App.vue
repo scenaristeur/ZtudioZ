@@ -149,6 +149,11 @@
         <section v-if="graph && graph.gate" class="gate">
           <h2>Gate {{ graph.gate.id }}</h2>
           <p>{{ graph.gate.question }}</p>
+          <VerdictCard
+            v-if="verdictArtifact"
+            :url="verdictArtifact.url"
+            @loaded="onVerdict"
+          />
           <div class="gate-actions">
             <button
               v-for="option in graph.gate.options.filter((o) => o !== 'retry')"
@@ -174,10 +179,13 @@
               :disabled="busy || !feedback.trim()"
               @click="answer('retry')"
             >
-              Creer une nouvelle version
+              {{ retryLabel }}
             </button>
             <span class="muted small">
               La correction relance l'etape precedente sans repartir de zero.
+            </span>
+            <span v-if="graph.gate.id === 'gate_verdict'" class="muted small">
+              Etape rejouee : images puis verdict.
             </span>
           </div>
         </section>
@@ -201,6 +209,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from './api'
 import JsonArtifact from './JsonArtifact.vue'
+import VerdictCard from './VerdictCard.vue'
 
 const projects = ref([])
 const slug = ref('')
@@ -220,6 +229,14 @@ const canLaunchNext = computed(() => {
   if (!next.value) return false
   return next.value.missing.every((key) => (nextInputs.value[key] || '').trim())
 })
+const verdictArtifact = computed(
+  () => (graph.value?.nodes || []).find((node) => node.id === 'verdict')?.artifact || null,
+)
+const retryLabel = computed(() =>
+  graph.value?.gate?.id === 'gate_verdict'
+    ? 'Recommencer les images avec cette correction'
+    : 'Creer une nouvelle version',
+)
 const nodes = computed(() =>
   Object.fromEntries((graph.value?.nodes || []).map((node) => [node.id, node])),
 )
@@ -334,6 +351,20 @@ async function answer(option) {
 
 function optionLabel(option) {
   return { continue: 'Continuer', retry: 'Nouvelle version', stop: 'Arreter' }[option] || option
+}
+
+function onVerdict(verdict) {
+  if (!verdict || graph.value?.gate?.id !== 'gate_verdict' || feedback.value.trim()) return
+  const lines = []
+  if (verdict.notes) {
+    lines.push(Array.isArray(verdict.notes) ? verdict.notes.join(' ') : verdict.notes)
+  }
+  for (const constraint of verdict.constraints || []) {
+    if (!constraint.respected) {
+      lines.push(`- ${constraint.text} : ${constraint.evidence || 'a corriger'}`)
+    }
+  }
+  feedback.value = lines.join('\n')
 }
 
 async function launchNext() {

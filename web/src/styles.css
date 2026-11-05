@@ -367,6 +367,60 @@ h2 {
   background: rgba(224, 168, 0, 0.06);
 }
 
+.verdict {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.verdict.ok {
+  border-color: rgba(63, 191, 127, 0.5);
+}
+
+.verdict.ko {
+  border-color: rgba(224, 85, 85, 0.55);
+}
+
+.verdict-head {
+  margin-bottom: 6px;
+}
+
+.verdict p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.verdict ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.verdict li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.verdict li small {
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.verdict .mark {
+  color: var(--green);
+}
+
+.verdict li.bad .mark {
+  color: var(--red);
+}
+
 .next-step {
   margin: 18px 0 24px;
   padding: 16px;
