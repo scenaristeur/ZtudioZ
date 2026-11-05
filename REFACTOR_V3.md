@@ -6,12 +6,12 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 178 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 184 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
-> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.3 livrées** : un projet
+> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.4 livrées** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
-> les workflows héritent du brief sans le redéclarer, et le journal d'un run terminé nourrit
-> le palier suivant.
+> les workflows héritent du brief sans le redéclarer, le journal d'un run terminé nourrit le
+> palier suivant, et une API Starlette expose projets, runs, journal, artefacts et gates.
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
@@ -160,9 +160,10 @@ studio/
     skills/<id>/SKILL.md packs de connaissance injectés dans les prompts
     schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
-  cli.py           run | journal | validate | invalidate | --skills-root | --project
-  project.py       studio.yaml -> providers + racine artefacts/journal
-tests/             29 fichiers, 178 tests
+  api/             app.py (Starlette), service.py (journal, artefacts, gates)
+  cli.py           run | journal | validate | invalidate | serve | --skills-root | --project
+  project.py       studio.yaml -> providers + contexte + racine artefacts/journal
+tests/             30 fichiers, 184 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -457,7 +458,7 @@ depuis le web. Le travail est découpé en tranches démontrables, chacune TDD :
 | 1 | **Projet + config providers** : `studio.yaml`, résolution `${VAR}`, providers construits depuis le projet, `run --project` — **fait** | un run mock M2 s'écrit dans le projet, sans flag provider | — |
 | 2 | **Contexte projet hérité** : brief, contraintes et référence portés par le projet, injectés sans redéclaration à chaque nœud — **fait** | changer le brief du projet invalide l'aval sans toucher aux workflows | D25 |
 | 3 | **Enchaînement des paliers** : M0 → M1 → M2 depuis la CLI, gates humaines inchangées — **fait** | un projet avance jusqu'au montage, reprise après `Ctrl-C` comprise | D10 |
-| 4 | **API** : projets, runs, journal, artefacts, réponse aux gates | le journal d'un run est lisible en HTTP, une gate se répond sans CLI | D11, D16 |
+| 4 | **API** : projets, runs, journal, artefacts, réponse aux gates — **fait** | le journal d'un run est lisible en HTTP, une gate se répond sans CLI | D11, D16 |
 | 5 | **Web** : UI pilotée par le graphe, plus de vues par étape | une gate se voit et se répond dans le navigateur | D22 |
 | 6 | **Clôture M3** : coûts réels, toolkit v1 exposé, replay | un run réel se pilote de bout en bout depuis le web | D11, D22, D30 |
 
@@ -606,6 +607,19 @@ et ses sorties sont fusionnées, puis filtrées par les `inputs`/`context` du wo
 Ordre de priorité : `--input` explicite > `context` du projet > journal. Le CLI affiche
 `herite du journal: ...` pour que rien ne soit silencieux.
 
+Tests ajoutés pour la tranche M3.4 (API Starlette) — **+6 tests, 184 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_api.py` (lecture) | 2 | `GET /api/projects` liste les projets et leur gate ; `GET /api/projects/{slug}` expose providers, contexte et runs |
+| `test_api.py` (journal/run) | 1 | le journal complet est lisible, le détail d'un run donne sa gate et les URLs d'artefacts ; un artefact se télécharge |
+| `test_api.py` (gates) | 1 | `POST .../gates/{gate}` relance le run en arrière-plan, le client suit le journal, deux gates mènent à `completed` |
+| `test_api.py` (garde-fous) | 2 | projet inconnu / slug avec traversée = 404 ; réponse de gate hors options = 400 |
+
+L'API ne duplique pas le CLI : elle lit le même journal et relance avec les providers et le
+contexte du projet. Une gate répondue sans être en attente est refusée (409), et un seul run
+peut tourner par projet.
+
 ---
 
 ## 9. Garde-fous
@@ -613,7 +627,7 @@ Ordre de priorité : `--input` explicite > `context` du projet > journal. Le CLI
 **Hors périmètre, explicitement :**
 - Aucune écriture, migration ou lecture destructive dans `projets/`.
 - Aucune modification de `main` au-delà de ce document.
-- Pas d'API web, pas de base de données, pas de système de plugins avant M2.
+- L'API web arrive en M3 (Starlette) ; pas de base de données ni de plugins avant M4.
 - Pas de réécriture des providers avant M3.
 - Pas de dépendance à `camel-ai` dans le noyau.
 
@@ -667,7 +681,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 178 passed
+.venv/bin/python -m pytest tests/      # 184 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -744,6 +758,7 @@ condition de :
 | 2026-11-05 | M3.1 | **Projet + config providers** : 11 tests rouges d'abord, **167 verts**. `studio.yaml` (nom, providers llm/image/video), interpolation `${VAR}` stricte, kinds mock/openai/pollinations, construction des adaptateurs, CLI `--project` (artefacts, journal et providers lus depuis le projet ; `journal` et `invalidate` aussi). Aucun secret dans la config. Démo : un run `m2-montage` mock s'écrit dans `/tmp/.../demo-project` | assistant |
 | 2026-11-05 | M3.2 | **D25 clos** : contexte projet hérité. 8 tests rouges d'abord, **175 verts**. `context:` au `studio.yaml`, déclaré une fois par workflow (`context: [brief]` requis ou `{brief: {required: false}}`), fusionné aux entrées (l'explicite gagne), validé avant tout appel, borne `limit` résolue depuis le contexte. `m1-scene` ne redéclare plus `brief`. Démo : `--project` + brief `max_shots: 1` → une seule image, sans `brief` dans `--input` | assistant |
 | 2026-11-05 | M3.3 | **Enchaînement des paliers** : 3 tests rouges d'abord, **178 verts**. La mémoire du projet = entrées + sorties du dernier run **terminé**, filtrées par les entrées/context du workflow cible ; priorité `--input` > contexte > journal ; un run bloqué ne nourrit pas la mémoire ; le CLI affiche `herite du journal`. Démo : M0 mock → M1 mock avec seulement `reference`, `treatment` et `brief` hérités | assistant |
+| 2026-11-05 | M3.4 | **API Starlette** : 6 tests rouges d'abord, **184 verts**. `studio serve` expose projets, détail, journal, runs, artefacts et `POST .../gates/{id}` ; la reprise tourne en tâche de fond et le client suit le journal. Garde-fous : slug sans traversée, artefact hash-only, gate en attente obligatoire (409), réponse dans les options (400), un run par projet. Démo : deux gates répondues en HTTP → `completed`, 6 artefacts | assistant |
 
 ---
 

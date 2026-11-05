@@ -8,6 +8,8 @@ dependencies = ["PyYAML>=6.0", "jsonschema>=4.0", "pyld>=2.0"]
 [project.optional-dependencies]
 # dispatch kind: mcp du registre d'outils (le noyau fonctionne sans)
 mcp = ["mcp>=2.0"]
+# API HTTP de lecture et de reponse aux gates
+api = ["starlette>=0.37", "uvicorn>=0.30"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

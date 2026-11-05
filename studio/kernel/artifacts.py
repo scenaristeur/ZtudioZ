@@ -128,6 +128,10 @@ class ArtifactStore:
         media = self._lineage.get(key, {}).get("media_type", "application/octet-stream")
         return Binary(path.read_bytes(), media)
 
+    def media_type(self, key: str) -> str:
+        """Type de media declare pour un artefact (sans charger son contenu)."""
+        return self._lineage.get(key, {}).get("media_type", "application/octet-stream")
+
     def path_for(self, key: str) -> Path:
         """Le chemin du fichier de contenu (JSON ou binaire) d'un artefact."""
         json_path = self.root / f"{key}.json"

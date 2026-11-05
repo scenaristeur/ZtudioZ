@@ -57,6 +57,23 @@ Le CLI affiche `herite du journal: ...`. Un run **bloqué** à une gate ne nourr
 mémoire : seule une validation humaine terminée compte. L'ordre est
 `--input` explicite > `context` du projet > journal.
 
+### API HTTP (lecture + gates)
+
+```bash
+python -m studio.cli serve --projects runs --port 8000
+```
+
+- `GET /api/projects` : projets, dernier statut, gate en attente.
+- `GET /api/projects/<slug>` : providers, contexte, runs.
+- `GET /api/projects/<slug>/journal[?run=<id>]` : événements.
+- `GET /api/projects/<slug>/runs/<run_id>` : résumé, gate, artefacts.
+- `GET /api/projects/<slug>/artifacts/<hash>` : fichier (JSON, image, mp4).
+- `POST /api/projects/<slug>/runs/<run_id>/gates/<gate_id>` avec `{"answer": "continue"}` :
+  relance en arrière-plan (202), puis suivre le journal.
+
+L'API ne lance pas encore de nouveaux runs : elle répond aux gates. Pas d'authentification —
+écoute sur `127.0.0.1` uniquement. Un seul run à la fois par projet.
+
 ## Règles permanentes
 
 - Ne jamais écrire dans `/home/smag/dev/ZtudioZ/projets/` ni modifier `main`.

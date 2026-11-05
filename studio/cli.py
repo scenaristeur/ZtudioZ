@@ -1,4 +1,4 @@
-"""CLI du studio : validate, run, journal."""
+"""CLI du studio : validate, run, journal, serve."""
 
 from __future__ import annotations
 
@@ -215,6 +215,15 @@ def cmd_journal(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    import uvicorn
+
+    from .api.app import create_app
+
+    uvicorn.run(create_app(args.projects), host=args.host, port=args.port)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="studio", description="Runtime d'agents declaratif")
     parser.add_argument("--root", default=str(STUDIO_ROOT))
@@ -239,6 +248,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     journal = sub.add_parser("journal", help="affiche le journal")
     journal.set_defaults(func=cmd_journal)
+
+    serve = sub.add_parser("serve", help="sert l'API HTTP (lecture + reponse aux gates)")
+    serve.add_argument("--projects", default="runs", help="racine des projets")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.set_defaults(func=cmd_serve)
 
     invalidate = sub.add_parser("invalidate", help="purge le cache d'un artefact et de son aval")
     invalidate.add_argument("hash")
