@@ -36,6 +36,7 @@ WORKFLOW_KEYS = {
     "version",
     "inputs",
     "outputs",
+    "context",
     "nodes",
 }
 

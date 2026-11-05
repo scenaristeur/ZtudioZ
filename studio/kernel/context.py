@@ -30,6 +30,7 @@ CONTEXT: dict[str, Any] = {
     "tools": {"@id": "studio:tools", "@container": "@set"},
     "inputs": "studio:inputs",
     "outputs": "studio:outputs",
+    "context": "studio:context",
     "budget": "studio:budget",
     "nodes": {"@id": "studio:nodes", "@container": "@set"},
     "id": "studio:nodeId",

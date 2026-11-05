@@ -71,6 +71,25 @@ def test_les_variables_d_environnement_sont_interpolees(tmp_path, monkeypatch):
     assert loaded.providers["llm"].options["base_url"] == "https://api.example/v1"
 
 
+def test_un_projet_porte_un_contexte_interpole(tmp_path, monkeypatch):
+    monkeypatch.setenv("STUDIO_TEST_REF", "phare blanc")
+
+    loaded = project(
+        tmp_path,
+        """
+        providers:
+          llm: {kind: mock}
+        context:
+          reference: ${STUDIO_TEST_REF}
+          brief:
+            constraints: {max_shots: 1}
+        """,
+    )
+
+    assert loaded.context["reference"] == "phare blanc"
+    assert loaded.context["brief"]["constraints"]["max_shots"] == 1
+
+
 def test_une_variable_absente_est_une_erreur_nette(tmp_path, monkeypatch):
     monkeypatch.delenv("STUDIO_TEST_ABSENTE", raising=False)
 

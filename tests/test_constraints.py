@@ -225,11 +225,12 @@ def test_shot_list_declare_le_brief_comme_entree():
     assert "brief" in (agent.get("inputs") or {}), "le decoupage ne peut pas voir le brief"
 
 
-def test_m1_scene_declare_le_brief_comme_entree():
+def test_m1_scene_declare_le_brief_dans_son_contexte():
     registry = load_registry(STUDIO_ROOT)
     workflow = registry.workflow("studio:workflow/m1-scene")
 
-    assert "brief" in (workflow.get("inputs") or {})
+    assert "brief" not in (workflow.get("inputs") or {})
+    assert "brief" in (workflow.get("context") or {})
 
 
 def test_le_brief_traverse_reellement_jusqua_agent(tmp_path):

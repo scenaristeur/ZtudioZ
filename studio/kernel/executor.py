@@ -71,6 +71,7 @@ class Executor:
         max_parallel: int = 8,
         image: Any | None = None,
         video: Any | None = None,
+        context: dict[str, Any] | None = None,
     ):
         self.registry = registry
         self.provider = provider
@@ -80,6 +81,7 @@ class Executor:
         self.max_parallel = max_parallel
         self.image = image
         self.video = video
+        self.context = dict(context or {})
         self._global = asyncio.Semaphore(max_parallel)
         self._artifacts: dict[str, str] = {}
         self._unit_costs: dict[str, float] = {}
@@ -94,9 +96,17 @@ class Executor:
         run_id: str | None = None,
     ) -> RunResult:
         """Execute ou reprend un workflow jusqu'a completion, gate ou echec."""
-        inputs = dict(inputs or {})
+        inputs = {**self.context, **dict(inputs or {})}
         workflow = self.registry.workflow(workflow_id)
         graph = self.registry.graph(workflow_id)
+        missing = [
+            name for name, required in graph.context.items()
+            if required and name not in inputs
+        ]
+        if missing:
+            raise LoadError(
+                f"contexte projet manquant pour {workflow['@id']}: {', '.join(missing)}"
+            )
         run_id = run_id or _run_id(workflow["@id"], inputs)
 
         # On ne reprend que les gate answers du run en cours (pas les artifacts
@@ -700,6 +710,8 @@ class Executor:
             answers=inner_answers,
             max_parallel=self.max_parallel,
             image=self.image,
+            video=self.video,
+            context=self.context,
         )
         sub_run = f"{run_id}#{node.id}"
         result = await child.run(node.workflow_id, resolved, run_id=sub_run)

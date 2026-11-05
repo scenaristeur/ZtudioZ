@@ -20,6 +20,11 @@ Tout l'état est là : `studio.yaml` (config), `journal.jsonl` (histoire append-
 ```yaml
 # <projet>/studio.yaml — aucun secret ici, seulement des noms de variables
 name: feu-follet
+context:                 # hérité par tous les workflows, sans le repasser en --input
+  brief:
+    constraints:
+      max_shots: 2
+  reference: "Phare blanc et rouge, mer grise, crépuscule froid"
 providers:
   llm:   {kind: openai, model: openai/gpt-oss-120b, base_url: ${OPENAI_BASE_URL}}
   image: {kind: pollinations, model: flux, width: 256, height: 256}
@@ -29,6 +34,10 @@ providers:
 Avec `--project <dossier>`, la CLI lit cette config, écrit artefacts et journal dans le
 projet, et n'exige plus aucun flag provider. Les flags restent des overrides explicites.
 Sans `--project`, `--runs` et les flags fonctionnent comme avant (défaut mock).
+
+Un workflow déclare ce qu'il consomme **une fois** : `context: [brief]` (requis) ou
+`context: {brief: {required: false}}` (optionnel). Une entrée explicite en `--input` écrase
+le contexte du projet. `m1-scene` ne redemande plus `brief` : il vient du projet.
 
 ## Règles permanentes
 

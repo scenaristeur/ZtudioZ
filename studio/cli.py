@@ -143,6 +143,7 @@ def cmd_run(args) -> int:
         answers=answers,
         image=image,
         video=video,
+        context=project.context if project is not None else None,
     )
     try:
         result = asyncio.run(executor.run(args.workflow, inputs))

@@ -11,8 +11,9 @@ inputs:
   reference:
     type: string
     required: true
+context:
   brief:
-    type: object
+    required: false
 nodes:
   - id: shots
     agent: studio:agent/shot-list

@@ -54,9 +54,10 @@ class Node:
 class Graph:
     """DAG fige d'un workflow, avec ses niveaux d'execution parallele."""
 
-    def __init__(self, workflow: dict, nodes: list[Node]):
+    def __init__(self, workflow: dict, nodes: list[Node], context: dict[str, bool] | None = None):
         self.workflow = workflow
         self.nodes = {node.id: node for node in nodes}
+        self.context = dict(context or {})
         self.levels = self._compute_levels()
 
     def node(self, node_id: str) -> Node:
@@ -84,7 +85,7 @@ class Graph:
 
 
 def _check_limit(
-    node_id: str, value: object, declared: dict
+    node_id: str, value: object, declared: dict, context: dict[str, bool] | None = None
 ) -> tuple[int | str | None, bool]:
     """Valide une borne de fan-out et dit si sa racine est licitement absente.
 
@@ -108,8 +109,39 @@ def _check_limit(
         )
     root = text[2:-1].strip().split(".")[0]
     spec = declared.get(root)
-    optional = root in declared and not (isinstance(spec, dict) and spec.get("required"))
+    if root in declared:
+        optional = not (isinstance(spec, dict) and spec.get("required"))
+    else:
+        optional = root in (context or {}) and not (context or {})[root]
     return text, optional
+
+
+def _check_context(workflow: dict) -> dict[str, bool]:
+    """Normalise `context:` en {nom: requis}.
+
+    Une liste (`context: [brief]`) declare des cles requises ; un mapping permet
+    de rendre une cle optionnelle (`brief: {required: false}`), ce qui preserve
+    les workflows qui savaient deja tourner sans brief.
+    """
+    raw = workflow.get("context")
+    if raw is None:
+        return {}
+    where = workflow.get("@id", "workflow")
+    if isinstance(raw, list):
+        return {str(name): True for name in expand_list(raw)}
+    if isinstance(raw, dict):
+        context: dict[str, bool] = {}
+        for name, spec in raw.items():
+            if isinstance(spec, bool):
+                context[str(name)] = spec
+            elif isinstance(spec, dict):
+                context[str(name)] = bool(spec.get("required", True))
+            else:
+                raise LoadError(
+                    f"{where}: contexte '{name}' doit etre un booleen ou {{required: ...}}"
+                )
+        return context
+    raise LoadError(f"{where}: 'context' doit etre une liste ou un mapping")
 
 
 def build_graph(workflow: dict, registry: "Registry") -> Graph:
@@ -117,6 +149,8 @@ def build_graph(workflow: dict, registry: "Registry") -> Graph:
     raw_nodes = workflow.get("nodes") or []
     if not isinstance(raw_nodes, list):
         raise LoadError(f"{workflow.get('@id')}: 'nodes' doit etre une liste")
+
+    context = _check_context(workflow)
 
     nodes: list[Node] = []
     seen: set[str] = set()
@@ -151,7 +185,7 @@ def build_graph(workflow: dict, registry: "Registry") -> Graph:
                 agent_id = resolved
 
         limit, limit_optional = _check_limit(
-            node_id, raw.get("limit"), workflow.get("inputs") or {}
+            node_id, raw.get("limit"), workflow.get("inputs") or {}, context
         )
 
         nodes.append(
@@ -181,7 +215,7 @@ def build_graph(workflow: dict, registry: "Registry") -> Graph:
                 f"noeud {node.id}: dependance inconnue: {', '.join(missing)}"
             )
 
-    graph = Graph(workflow, nodes)
+    graph = Graph(workflow, nodes, context)
     for node in nodes:
         if node.is_gate and not node.question:
             raise LoadError(f"noeud {node.id}: une gate doit poser une question")

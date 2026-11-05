@@ -6,10 +6,11 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 167 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 175 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
-> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 livrée** : un projet
-> porte sa config (`studio.yaml`) et ses providers, la CLI écrit dans le projet.
+> Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 et M3.2 livrées** : un
+> projet porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le
+> projet et les workflows héritent du brief sans le redéclarer.
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
@@ -160,7 +161,7 @@ studio/
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
   cli.py           run | journal | validate | invalidate | --skills-root | --project
   project.py       studio.yaml -> providers + racine artefacts/journal
-tests/             27 fichiers, 167 tests
+tests/             28 fichiers, 175 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -452,8 +453,8 @@ depuis le web. Le travail est découpé en tranches démontrables, chacune TDD :
 
 | # | Tranche | Critère de démonstration | Dettes |
 |---|---|---|---|
-| 1 | **Projet + config providers** : `studio.yaml`, résolution `${VAR}`, providers construits depuis le projet, `run --project` | un run mock M2 s'écrit dans le projet, sans flag provider | — |
-| 2 | **Contexte projet hérité** : brief, contraintes et référence portés par le projet, injectés sans redéclaration à chaque nœud | changer le brief du projet invalide l'aval sans toucher aux workflows | D25 |
+| 1 | **Projet + config providers** : `studio.yaml`, résolution `${VAR}`, providers construits depuis le projet, `run --project` — **fait** | un run mock M2 s'écrit dans le projet, sans flag provider | — |
+| 2 | **Contexte projet hérité** : brief, contraintes et référence portés par le projet, injectés sans redéclaration à chaque nœud — **fait** | changer le brief du projet invalide l'aval sans toucher aux workflows | D25 |
 | 3 | **Enchaînement des paliers** : M0 → M1 → M2 depuis la CLI, gates humaines inchangées | un projet avance jusqu'au montage, reprise après `Ctrl-C` comprise | D10 |
 | 4 | **API** : projets, runs, journal, artefacts, réponse aux gates | le journal d'un run est lisible en HTTP, une gate se répond sans CLI | D11, D16 |
 | 5 | **Web** : UI pilotée par le graphe, plus de vues par étape | une gate se voit et se répond dans le navigateur | D22 |
@@ -576,6 +577,21 @@ La config ne contient aucun secret : elle nomme les variables (`api_key_env`), l
 restent dans l'environnement. Les flags `--provider`, `--image-provider`, `--video-provider`
 restent des overrides explicites au-dessus de la config.
 
+Tests ajoutés pour la tranche M3.2 (contexte projet hérité, D25) — **+8 tests, 175 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_project.py` | 1 | le `context:` du projet est lu et interpolé (`${VAR}`) |
+| `test_project_context.py` (héritage) | 3 | le contexte atteint l'agent sans entrée de workflow ; une entrée explicite l'écrase ; un contexte requis absent échoue **avant** tout appel |
+| `test_project_context.py` (borne) | 2 | un contexte optionnel absent ne bloque pas ; une borne `limit: ${brief.max_shots}` issue du contexte tronque bien le fan-out (`items_truncated`) |
+| `test_project_context.py` (identité) | 1 | changer le contexte change le `run_id` (donc rejoue, sans invalider le cache des autres runs) |
+| `test_project_context.py` (CLI) | 1 | `--project` nourrit `m1-scene` avec son brief : plus besoin de le passer en `--input` |
+
+`m1-scene` ne déclare plus `brief` dans `inputs` : il déclare `context: {brief: {required: false}}`
+une fois, et le nœud `images` garde sa borne `limit: ${brief.constraints.max_shots}`. Le brief
+reste optionnel — un run sans brief n'est pas cassé — mais un workflow qui le déclare
+**requis** échoue net s'il manque.
+
 ---
 
 ## 9. Garde-fous
@@ -637,7 +653,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 167 passed
+.venv/bin/python -m pytest tests/      # 175 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -712,6 +728,7 @@ condition de :
 | 2026-11-05 | M2 vidéo | **Gate avant les clips sur le repli `m2-montage`** : le chemin normal avait sa gate avant dépense, le repli fabriquait encore ses clips avant toute validation. 2 tests rouges (contrat de graphe + aucun mp4 avant réponse), `gate_clips` en tête, nœud `clips` en `needs`, **156 verts**. Démo : bloque sur `gate_clips`, `continue` → gate_montage, `continue` → probe h264 | assistant |
 | 2026-11-05 | M3 | **Décisions humaines** : D30 tranché — `tmpfiles.org` accepté pour les runs vidéo réels, stockage maîtrisé et réconciliation repoussés à M4. Le WIP `brief-synthesizer` est commité par l'humain (`1e8463a`). M3 découpé en 6 tranches (section 7.1) | humain |
 | 2026-11-05 | M3.1 | **Projet + config providers** : 11 tests rouges d'abord, **167 verts**. `studio.yaml` (nom, providers llm/image/video), interpolation `${VAR}` stricte, kinds mock/openai/pollinations, construction des adaptateurs, CLI `--project` (artefacts, journal et providers lus depuis le projet ; `journal` et `invalidate` aussi). Aucun secret dans la config. Démo : un run `m2-montage` mock s'écrit dans `/tmp/.../demo-project` | assistant |
+| 2026-11-05 | M3.2 | **D25 clos** : contexte projet hérité. 8 tests rouges d'abord, **175 verts**. `context:` au `studio.yaml`, déclaré une fois par workflow (`context: [brief]` requis ou `{brief: {required: false}}`), fusionné aux entrées (l'explicite gagne), validé avant tout appel, borne `limit` résolue depuis le contexte. `m1-scene` ne redéclare plus `brief`. Démo : `--project` + brief `max_shots: 1` → une seule image, sans `brief` dans `--input` | assistant |
 
 ---
 
@@ -721,7 +738,7 @@ Liste volontairement exhaustive : c'est le carnet de charges du palier suivant, 
 empêche de croire que le noyau est fini. Clos : D1–D3 (M1), D4–D9, D13, D17, D18 (M2),
 D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp), D24 (contraintes
 transportées et bornées), D27 (schéma des plans), D28 (contexte du verdict).
-Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D29, D30.
+Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D26, D29, D30.
 
 | # | Écart | Où le voir | À traiter |
 |---|---|---|---|
@@ -749,7 +766,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D29, D30.
 | D22 | **Le toolkit v1 (~25 outils MCP) n'est pas exposé** : le mécanisme marche, il manque le serveur (camel, context `projets/`) et ses fiches d'outils dans le registre | `pipeline/ztudioz_toolkit.py` v1, `tools.yamlld` | M3 — exposition, pas duplication |
 | D23 | **Le verdict vision est un proxy texte** : le noeud recoit des references d'artefacts, pas les pixels ; un reel `continuity-checker` refuse donc a juste titre (`ok=false`) | `catalog/agents/continuity-checker.yamlld`, `_exec_agent` | M4 : entrees multimodales des providers LLM |
 | ~~D24~~ | ~~Contraintes du brief perdues avant les plans~~ | **clos** : `constraints.max_shots` entre dans le schéma du brief, `brief` devient entrée déclarée de `m1-scene` et de `shot-list`, et `limit:` borne le `foreach` avec troncature journalisée. Garde fou : feu-follet (6 shots produits par le LLM, max 2 demandé) ne paie plus que 2 images | — |
-| D25 | **Pas de contexte projet** : la contrainte traverse parce qu'on redéclare `brief` à chaque workflow et à chaque agent. Un nouveau palier qui oublie de le faire perd la contrainte, et rien ne le signale. Il manque un objet projet porté par le graphe, hérité par tous les nœuds sans redéclaration | `catalog/workflows/*.yamlld` (entrées répétées), `executor._resolve_inputs` | M3 |
+| ~~D25~~ | ~~Pas de contexte projet~~ | **clos en M3.2** : le projet porte un `context:` (brief, contraintes, référence), fusionné aux entrées du run ; le workflow declare ce qu'il consomme une fois (`context:`), les nœuds n'en redeclarent rien. Entrée explicite prioritaire, contexte requis absent = échec avant appel, contexte optionnel absent = pas de borne. `m1-scene` ne redéclare plus `brief` | `studio/project.py`, `graph.Graph.context`, `executor.run` | — |
 | D26 | **Seul `max_shots` est enforceable** : les contraintes de `constraints.freeform` (« pas de dialogue », « fin ambigue ») ne voyagent que dans le prompt ; aucun contrôle ne vérifie qu'elles sont tenues. La borne numérique est dure, la contrainte de forme est une espérance | `catalog/agents/shot-list.yamlld` (prompt), absence de vérificateur | M4 (avec D23, quand le multimodal verra les rushes) |
 | ~~D27~~ | ~~`shots.schema.json` exigeait `minItems: 3`~~ | **clos (trouvé par le run réel du 2026-11-05)** : le LLM produisait 2 plans conformes à `constraints.max_shots`, le schéma refusait (`is too short`). Le schéma contredisait la contrainte que D24 venait d'implémenter. `minItems: 1`, 2 tests : 2 plans valides, liste vide toujours refusée | — |
 | D28 | **Le `continuity-checker` est affamé** : il ne déclare que `images` en entrée et le nœud `verdict` ne dépend que de `images` + la gate. Il ne reçoit ni `shots`, ni `reference`, ni `brief`, donc son verdict est structurellement vide : `ok=false`, « impossible d'évaluer, fournissez le brief ». Distinct de D23 (absence de pixels) : même comme proxy texte il n'a rien à comparer | `catalog/agents/continuity-checker.yamlld`, `workflows/m1-scene.yamlld` (nœud `verdict`) | **clos** : `shots` (requis) et `brief` (optionnel) entrent dans l'agent, `verdict` dépend de `shots` ; 7 tests, vérifié en réel (`ok=true`, constats sourcés « d'après les prompts ») |

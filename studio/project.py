@@ -24,7 +24,7 @@ from .tools.llm import MockProvider, OpenAICompatProvider
 from .tools.video import MockVideoProvider, PollinationsVideoProvider
 
 CONFIG_NAME = "studio.yaml"
-TOP_KEYS = {"name", "providers"}
+TOP_KEYS = {"name", "providers", "context"}
 SLOTS = ("llm", "image", "video")
 
 KINDS = {
@@ -75,6 +75,7 @@ class Project:
     root: Path
     name: str
     providers: dict[str, ProviderConfig]
+    context: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def load(cls, root: str | Path) -> "Project":
@@ -97,12 +98,17 @@ class Project:
         if unknown:
             raise ProjectError(f"{path}: provider(s) inconnu(s): {unknown}")
 
+        context_raw = raw.get("context") or {}
+        if not isinstance(context_raw, dict):
+            raise ProjectError(f"{path}: 'context' doit etre un mapping")
+        context = {name: _interpolate(path, value) for name, value in context_raw.items()}
+
         providers: dict[str, ProviderConfig] = {}
         for slot in SLOTS:
             body = providers_raw.get(slot, {"kind": "mock"})
             providers[slot] = _provider_config(path, slot, body)
 
-        return cls(root=root, name=name, providers=providers)
+        return cls(root=root, name=name, providers=providers, context=context)
 
     @property
     def artifacts(self) -> Path:
