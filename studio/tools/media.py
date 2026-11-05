@@ -53,11 +53,40 @@ def _artifact_ref(value: Any, ctx: Any) -> dict:
 
 
 def clip(params: dict, ctx: Any) -> Binary:
-    """Un clip de couleur pure : source lavfi, h264, bitexact (deterministe)."""
+    """Un clip video : depuis une image (M1) ou une couleur pure (tests, storyboard).
+
+    Une fiche qui porte une reference d'artefact image devient un plan fixe de la
+    duree demandee — c'est le pont M1 -> M2. Une fiche `color` reste un clip
+    synthetique deterministe. Toute autre reference est refusee : mieux vaut un
+    item en panne journalise qu'un montage silencieusement faux.
+    """
     spec = params.get("item") if isinstance(params.get("item"), dict) else params
-    color = str(spec["color"])
     duration = float(spec.get("duration", 0.5))
 
+    ref = _artifact_ref(spec, ctx)
+    if ref is not None:
+        binary = ctx.store.get(ref["artifact"])
+        media_type = getattr(binary, "media_type", "")
+        if not isinstance(binary, Binary) or not str(media_type).startswith("image/"):
+            raise RuntimeError(f"clip: reference non image: {media_type or type(binary).__name__}")
+        source = _materialize(ref, ctx)
+        out = Path(tempfile.mkstemp(prefix="ztudioz-clip-", suffix=".mp4")[1])
+        try:
+            _run([
+                "ffmpeg", "-y", "-v", "error",
+                "-loop", "1", "-i", str(source),
+                "-t", str(duration), "-r", "25",
+                "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-fflags", "+bitexact", "-flags:v", "+bitexact",
+                str(out),
+            ])
+            return Binary(out.read_bytes(), "video/mp4")
+        finally:
+            source.unlink(missing_ok=True)
+            out.unlink(missing_ok=True)
+
+    color = str(spec["color"])
     out = Path(tempfile.mkstemp(prefix="ztudioz-clip-", suffix=".mp4")[1])
     try:
         _run([
