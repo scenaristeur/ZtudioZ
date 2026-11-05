@@ -52,19 +52,32 @@ python -m studio.cli --runs $RUNS run studio:workflow/m0-conversation \
 # retry = refabriquer le brief ; stop = arrêter le run
 ```
 Le `--input` doit être **identique** (le run_id en dérive) ; les nœuds déjà faits ne sont
-jamais repayés (cache + journal).
+jamais repayés (cache + journal). Récupère le **brief complet** (`outputs.brief`) : il doit
+repartir avec toi jusqu'à M1, ce n'est pas un artefact mort.
 
 ### M1 — traitement -> plans -> images -> gate -> verdict
 ```bash
 python -m studio.cli --runs $RUNS run studio:workflow/m1-scene \
   --provider openai --image-provider pollinations \
-  --input '{"treatment": "<sortie du M0>", "reference": "<description visuelle ancre>"}'
+  --input '{"treatment": "<sortie du M0>", "reference": "<description visuelle ancre>", "brief": <outputs.brief du M0>}'
 python -m studio.cli --runs $RUNS run studio:workflow/m1-scene ... --answer gate_images=continue
 ```
+**Passe toujours le `brief`.** Sans lui, `brief.constraints.max_shots` est absent et le
+découpage n'est plus borné : un LLM qui surcompte les plans te les fera tous payer (c'est
+exactement la panne D24, fermée par cette entrée). Le nœud `images` porte
+`limit: "${brief.constraints.max_shots}"` — la borne vient du brief, pas d'un nombre tapé à la
+main dans un shell.
+
+Si le plan demandé dépasse la borne, le journal écrit `items_truncated {produced, kept}` : ce
+n'est **pas** une erreur ni un bug, c'est la contrainte de l'humain qui a tenu. Signale le
+chiffre à l'humain à la gate (« le découpage proposait 6 plans, 2 gardés ») — ne le tais pas.
+
 Livrables : `outputs.image[]` = références d'artefacts ; les vraies images sont dans
 `runs/<slug>/artifacts/<hash>.jpg` — ouvres-les, c'est ce que l'humain doit voir à la gate.
 Attention : le verdict du `continuity-checker` est un **proxy texte** (dette D23) —
-`ok=false` avec notes = comportement sain, pas un bug.
+`ok=false` avec notes = comportement sain, pas un bug. Les contraintes non chiffrées
+(`constraints.freeform`, « pas de dialogue », « fin ambiguë ») ne voyagent que dans le prompt :
+aucun contrôle ne vérifie qu'elles sont tenues (dette D26).
 
 ### M2 — plans -> clips -> montage -> gate -> ffprobe
 ```bash
@@ -90,5 +103,25 @@ python -m studio.cli --skills-root /home/smag/dev/ZtudioZ/.opencode/skills valid
 
 Agents : `studio/catalog/agents/*.yamlld` (LlmAgent texte, ImageAgent, ToolAgent ffmpeg).
 Workflows : `studio/catalog/workflows/*.yamlld`. Sorties typées : `catalog/schemas/`.
+
+Champs d'un nœud, pour écrire un workflow :
+
+| Champ | Effet |
+|---|---|
+| `agent:` | `studio:agent/...` **ou** `studio:workflow/...` (sous-workflow, gates exposées préfixées) |
+| `needs: [..]` | dépendances ; les sorties des nœuds cités entrent dans la portée |
+| `foreach: "${cles}"` | un item = une exécution ; `${...}` se résout dans la portée fusionnée |
+| `as: shot` | injecte l'item aussi sous ce nom (`item` reste l'alias par défaut) |
+| `limit: 2` ou `"${brief.constraints.max_shots}"` | borne le fan-out ; troncature journalisée `items_truncated` |
+| `parallel: 3` | concurrence max sur ce nœud |
+| `on_item_failure: continue` | un item en panne est retiré et journalisé, le nœud ne tombe que si tout tombe |
+| `type: studio:HumanGate` | nœud de validation humaine ; sans réponse, le run `blocked` |
+| `question:` | la question posée à l'humain (obligatoire pour une gate) |
+| `options:` | `[continue, retry, stop]` ; jamais de saut silencieux |
+
+Règle de portage des contraintes : une contrainte de l'humain qui n'est ni dans le schéma du
+brief ni déclarée en entrée d'un nœud **n'existe pas** pour le moteur (dette D25 — pas encore de
+contexte projet hérité automatiquement).
+
 Modifier un agent = toucher prompts/skills/budget uniquement ; le moteur, lui, ne se
 change qu'avec tests. L'état du chantier et la dette : `REFACTOR_V3.md` (§7 paliers, §12).
