@@ -50,34 +50,70 @@
         </nav>
         <p v-else class="muted">Aucun run dans ce projet.</p>
 
-        <section v-if="graph" class="graph">
-          <div v-for="(level, index) in graph.levels" :key="index" class="level">
-            <div v-for="id in level" :key="id" class="node" :class="nodeClass(id)">
-              <div class="node-head">
-                <strong>{{ id }}</strong>
-                <span class="kind">{{ node(id).is_gate ? 'gate' : 'agent' }}</span>
-              </div>
-              <p v-if="node(id).agent" class="muted small">{{ node(id).agent }}</p>
-              <p v-if="node(id).foreach" class="muted small">
-                foreach {{ node(id).foreach }}
-              </p>
-              <div v-if="node(id).artifact" class="artifact">
-                <img
-                  v-if="isImage(node(id).artifact)"
-                  :src="node(id).artifact.url"
-                  :alt="id"
-                />
-                <video
-                  v-else-if="isVideo(node(id).artifact)"
-                  :src="node(id).artifact.url"
-                  controls
-                />
+        <section v-if="graph" class="workflow">
+          <div v-if="graph.run" class="run-summary">
+            <span class="badge" :class="graph.run.status">{{ graph.run.status }}</span>
+            <span>{{ shortWorkflow(graph.run.workflow) }}</span>
+            <span class="muted small">run {{ graph.run.run_id }}</span>
+            <span class="muted small">{{ graph.run.cost.toFixed(4) }} credits</span>
+          </div>
+
+          <div class="legend">
+            <span><i class="dot done"></i> termine</span>
+            <span><i class="dot waiting"></i> en attente</span>
+            <span><i class="dot gate"></i> gate</span>
+            <span><i class="dot"></i> a faire</span>
+          </div>
+
+          <div v-for="(level, index) in graph.levels" :key="index" class="stage">
+            <div class="stage-head">
+              <span class="stage-num">{{ index + 1 }}</span>
+              <span class="stage-label">Etape {{ index + 1 }}</span>
+              <span class="stage-meta">{{ level.length }} noeud{{ level.length > 1 ? 's' : '' }}</span>
+            </div>
+
+            <div class="stage-nodes">
+              <div v-for="id in level" :key="id" class="node" :class="nodeClass(id)">
+                <div class="node-head">
+                  <span class="node-title">
+                    <i class="dot" :class="nodeStatus(id)"></i>
+                    <strong>{{ id }}</strong>
+                  </span>
+                  <span class="kind">{{ node(id).is_gate ? 'gate' : 'agent' }}</span>
+                </div>
+                <p v-if="node(id).agent" class="muted small">{{ node(id).agent }}</p>
+                <p v-if="node(id).needs && node(id).needs.length" class="muted small">
+                  apres : {{ node(id).needs.join(', ') }}
+                </p>
+                <p v-if="node(id).foreach" class="muted small">
+                  foreach {{ node(id).foreach }}<span v-if="node(id).limit"> · max {{ node(id).limit }}</span>
+                </p>
+                <p v-if="node(id).is_gate && node(id).question" class="question">
+                  {{ node(id).question }}
+                </p>
+
+                <div v-if="node(id).media && node(id).media.length" class="media-grid">
+                  <template v-for="media in node(id).media" :key="media.hash">
+                    <img
+                      v-if="isImage(media)"
+                      :src="media.url"
+                      :alt="`${id} ${media.hash}`"
+                    />
+                    <video v-else-if="isVideo(media)" :src="media.url" controls />
+                  </template>
+                </div>
+
                 <JsonArtifact
-                  v-else-if="isJson(node(id).artifact)"
+                  v-if="node(id).artifact && isJson(node(id).artifact)"
                   :url="node(id).artifact.url"
                   :label="`voir ${id} (JSON)`"
                 />
-                <a v-else :href="node(id).artifact.url" target="_blank">
+                <a
+                  v-else-if="node(id).artifact && !node(id).media.length"
+                  :href="node(id).artifact.url"
+                  target="_blank"
+                  class="artifact-link"
+                >
                   {{ node(id).artifact.hash }}
                 </a>
               </div>
@@ -147,6 +183,13 @@ function nodeClass(id) {
     gate: current.is_gate,
     waiting: graph.value?.gate?.id === id,
   }
+}
+
+function nodeStatus(id) {
+  if (graph.value?.gate?.id === id) return 'waiting'
+  if (node(id).completed) return 'done'
+  if (node(id).is_gate) return 'gate'
+  return ''
 }
 
 function isImage(artifact) {

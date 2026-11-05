@@ -132,6 +132,43 @@ def run_start(events: list[dict], run_id: str) -> tuple[str, dict] | tuple[None,
     return None, None
 
 
+def _embedded_hashes(value) -> list[str]:
+    """Hashs des references `{"artifact": ...}` portees par une valeur JSON."""
+    found: list[str] = []
+    if isinstance(value, dict):
+        artifact = value.get("artifact")
+        if isinstance(artifact, str):
+            found.append(artifact)
+        for nested in value.values():
+            found.extend(_embedded_hashes(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            found.extend(_embedded_hashes(nested))
+    return found
+
+
+def _media_refs(store: ArtifactStore, slug: str, artifact: str) -> list[dict]:
+    """Images et videos contenues dans un artefact (directement ou imbriquees)."""
+    value = store.get(artifact)
+    hashes = _embedded_hashes(value) if isinstance(value, (dict, list)) else [artifact]
+    media = []
+    seen = set()
+    for hash_ in hashes:
+        if hash_ in seen:
+            continue
+        seen.add(hash_)
+        media_type = store.media_type(hash_)
+        if media_type.startswith(("image/", "video/")):
+            media.append(
+                {
+                    "hash": hash_,
+                    "media_type": media_type,
+                    "url": f"/api/projects/{slug}/artifacts/{hash_}",
+                }
+            )
+    return media
+
+
 def run_graph(project: Project, run_id: str, registry) -> dict:
     """Graphe du workflow d'un run, fusionne avec son etat journalise."""
     from ..kernel.context import short_iri
@@ -169,6 +206,9 @@ def run_graph(project: Project, run_id: str, registry) -> dict:
                     }
                     if artifact
                     else None
+                ),
+                "media": (
+                    _media_refs(store, project.root.name, artifact) if artifact else []
                 ),
             }
         )

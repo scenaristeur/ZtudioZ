@@ -170,6 +170,9 @@ def test_api_graphe_du_run(tmp_path):
         assert gate["options"] == ["continue", "retry", "stop"]
         assert any(node["completed"] for node in graph["nodes"])
         assert graph["levels"]
+        clips = next(node for node in graph["nodes"] if node["id"] == "clips")
+        assert clips["media"]
+        assert clips["media"][0]["media_type"] == "video/mp4"
 
     asyncio.run(scenario())
 
