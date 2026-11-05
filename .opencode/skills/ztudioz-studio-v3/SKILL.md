@@ -74,12 +74,11 @@ chiffre à l'humain à la gate (« le découpage proposait 6 plans, 2 gardés »
 
 Livrables : `outputs.image[]` = références d'artefacts ; les vraies images sont dans
 `runs/<slug>/artifacts/<hash>.jpg` — ouvres-les, c'est ce que l'humain doit voir à la gate.
-Attention : le verdict du `continuity-checker` est un **proxy texte** (dette D23) et, en plus, il
-ne reçoit aujourd'hui **ni les plans, ni la référence, ni le brief** (dette D28) : son `ok=false`
-avec « impossible d'évaluer » est structurel, pas un bug de ton run. Ne présente pas ce verdict
-comme une validation visuelle — l'humain a vu les images, c'est lui qui a jugé.
-Les contraintes non chiffrées (`constraints.freeform`, « pas de dialogue », « fin ambiguë ») ne
-voyagent que dans le prompt : aucun contrôle ne vérifie qu'elles sont tenues (dette D26).
+Attention : le verdict du `continuity-checker` compare **le texte** — plans, brief, contraintes
+— et il le dit. Il **ne voit pas les pixels** (dette D23) : ne le présente jamais comme une
+validation visuelle. Les contraintes non chiffrées (`constraints.freeform`, « pas de dialogue »,
+« fin ambiguë ») ne sont vérifiées que comme « non contredites par les prompts » (dette D26).
+L'humain a vu les images, c'est lui qui a jugé à la gate.
 
 ### M2 — plans -> clips -> montage -> gate -> ffprobe
 ```bash
@@ -124,6 +123,10 @@ Champs d'un nœud, pour écrire un workflow :
 Règle de portage des contraintes : une contrainte de l'humain qui n'est ni dans le schéma du
 brief ni déclarée en entrée d'un nœud **n'existe pas** pour le moteur (dette D25 — pas encore de
 contexte projet hérité automatiquement).
+
+Piège D29 : `inputs:` / `outputs:` sur un **nœud** sont acceptés au chargement puis **ignorés**.
+Ils ne renomment rien. Et la sortie `reference` de `ref_image` écrase l'entrée texte `reference`
+dans la portée : un nœud qui dépend de `ref_image` ne voit plus l'ancre textuelle de l'humain.
 
 Modifier un agent = toucher prompts/skills/budget uniquement ; le moteur, lui, ne se
 change qu'avec tests. L'état du chantier et la dette : `REFACTOR_V3.md` (§7 paliers, §12).

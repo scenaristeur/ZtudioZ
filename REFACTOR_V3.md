@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés** — noyau complet, artefacts binaires typés et lignés,
 > adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par ffprobe,
-> échec d'item borné, sous-workflows, retry de gate, SIGINT, 131 tests verts, démos CLI
+> échec d'item borné, sous-workflows, retry de gate, SIGINT, 138 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés).
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
@@ -156,7 +156,7 @@ studio/
     schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
   cli.py           run | journal | validate | invalidate | --skills-root
-tests/             24 fichiers, 131 tests
+tests/             25 fichiers, 138 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -508,6 +508,18 @@ Tests ajoutés pour D24 (contraintes du brief jusqu'aux plans) — rouges d'abor
 Note D27 : ces 3 tests sont nés du **run réel**, pas d'une revue. Les fixtures mock fournissaient
 toujours 3 plans ; le vrai LLM, lui, a obéi au brief et produit 2 plans que le schéma refusait.
 
+Tests ajoutés pour D28 (le contrôleur reçoit de quoi comparer) — **+7 tests, 138 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_verdict_context.py` (contrat) | 3 | `continuity-checker` déclare `shots` et `brief`, le brief reste optionnel, le nœud `verdict` dépend de `shots` |
+| `test_verdict_context.py` (réel du graphe) | 4 | les plans et le brief arrivent au contrôleur, les contraintes `freeform` aussi, un run sans brief ne casse rien, une image par plan |
+
+Vérifié en réel sur `feu-follet-v2` : `ok=true`, notes « 2 plans, 2 images, chaque prompt
+correspond à son plan, max_shots=2 respecté, les contraintes freeform ne sont pas contredites par
+les prompts ». La formulation « ne sont pas contredites par les prompts » est le résultat d'une
+consigne explicite : **le contrôleur ne prétend jamais avoir vu l'image** (D23).
+
 ---
 
 ## 9. Garde-fous
@@ -633,6 +645,9 @@ condition de :
 | 2026-11-05 | run réel | **Le run réel a trouvé ce que 125 tests verts ne voyaient pas** : `shots.schema.json` exigeait `minItems: 3`, le LLM produisait 2 plans conformes au brief → `node_failed`. Le schéma du catalogue interdisait la contrainte de D24. Toutes les fixtures mock fournissaient 3 plans, d'où l'angle mort | assistant |
 | 2026-11-05 | D27 | 2 tests rouges (`2 plans valides`, `liste vide refusée`), `minItems: 3 → 1`, **131 verts**. Reprise du run : planche de référence en cache, `shots` + 2 images réels, **57 s**, statut `blocked` à la gate | assistant |
 | 2026-11-05 | run réel | Gate images montrée (3 chemins de fichiers, quota : 3 images Pollinations) ; l'humain répond `continue`. Verdict : `ok=false`, « impossible d'évaluer, le brief n'est pas fourni ». **Le contrôleur est affamé par construction** → **D28** (il ne reçoit ni shots, ni référence, ni brief), distinct de D23 | assistant + humain |
+| 2026-11-05 | D28 | 7 tests rouges d'abord, **138 verts** : `shots` (requis) et `brief` (optionnel) entrent dans `continuity-checker`, le nœud `verdict` dépend de `shots`. Le prompt interdit de juger les pixels et exige la source de chaque constat | assistant |
+| 2026-11-05 | D28 | Vérifié en réel : premier appel → le LLM rend `{"verdict": "ok"}` (chaîne), le **schéma le refuse** — le contrat a tenu. Prompt rendu explicite (objet JSON + exemple), v4, reprise : `ok=true`, notes sourcées « d'après les prompts ». Le contrôleur ne se prétend plus aveugle, et ne prétend pas voir | assistant |
+| 2026-11-05 | D29 | Limite trouvée en nourrissant D28 : `inputs:` sur un nœud est **accepté mais ignoré** (il figure dans `NODE_KEYS`), et la sortie `reference` de `ref_image` écrase l'entrée texte `reference` dans la portée fusionnée. Le contrôleur reçoit donc `shots` + `brief`, pas l'ancre textuelle. Consigné plutôt que contourné en silence | assistant |
 
 ---
 
@@ -641,8 +656,8 @@ condition de :
 Liste volontairement exhaustive : c'est le carnet de charges du palier suivant, et ce qui
 empêche de croire que le noyau est fini. Clos : D1–D3 (M1), D4–D9, D13, D17, D18 (M2),
 D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp), D24 (contraintes
-transportées et bornées).
-Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D28.
+transportées et bornées), D27 (schéma des plans), D28 (contexte du verdict).
+Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D29.
 
 | # | Écart | Où le voir | À traiter |
 |---|---|---|---|
@@ -673,7 +688,8 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D28.
 | D25 | **Pas de contexte projet** : la contrainte traverse parce qu'on redéclare `brief` à chaque workflow et à chaque agent. Un nouveau palier qui oublie de le faire perd la contrainte, et rien ne le signale. Il manque un objet projet porté par le graphe, hérité par tous les nœuds sans redéclaration | `catalog/workflows/*.yamlld` (entrées répétées), `executor._resolve_inputs` | M3 |
 | D26 | **Seul `max_shots` est enforceable** : les contraintes de `constraints.freeform` (« pas de dialogue », « fin ambigue ») ne voyagent que dans le prompt ; aucun contrôle ne vérifie qu'elles sont tenues. La borne numérique est dure, la contrainte de forme est une espérance | `catalog/agents/shot-list.yamlld` (prompt), absence de vérificateur | M4 (avec D23, quand le multimodal verra les rushes) |
 | ~~D27~~ | ~~`shots.schema.json` exigeait `minItems: 3`~~ | **clos (trouvé par le run réel du 2026-11-05)** : le LLM produisait 2 plans conformes à `constraints.max_shots`, le schéma refusait (`is too short`). Le schéma contredisait la contrainte que D24 venait d'implémenter. `minItems: 1`, 2 tests : 2 plans valides, liste vide toujours refusée | — |
-| D28 | **Le `continuity-checker` est affamé** : il ne déclare que `images` en entrée et le nœud `verdict` ne dépend que de `images` + la gate. Il ne reçoit ni `shots`, ni `reference`, ni `brief`, donc son verdict est structurellement vide : `ok=false`, « impossible d'évaluer, fournissez le brief ». Distinct de D23 (absence de pixels) : même comme proxy texte il n'a rien à comparer | `catalog/agents/continuity-checker.yamlld`, `workflows/m1-scene.yamlld` (nœud `verdict`) | prochain pas |
+| D28 | **Le `continuity-checker` est affamé** : il ne déclare que `images` en entrée et le nœud `verdict` ne dépend que de `images` + la gate. Il ne reçoit ni `shots`, ni `reference`, ni `brief`, donc son verdict est structurellement vide : `ok=false`, « impossible d'évaluer, fournissez le brief ». Distinct de D23 (absence de pixels) : même comme proxy texte il n'a rien à comparer | `catalog/agents/continuity-checker.yamlld`, `workflows/m1-scene.yamlld` (nœud `verdict`) | **clos** : `shots` (requis) et `brief` (optionnel) entrent dans l'agent, `verdict` dépend de `shots` ; 7 tests, vérifié en réel (`ok=true`, constats sourcés « d'après les prompts ») |
+| D29 | **Pas de mapping d'entrées au niveau du nœud** : `inputs:` et `outputs:` figurent dans `NODE_KEYS` donc sont **acceptés, puis ignorés** — un auteur qui croit renommer une entrée n'obtient rien. Et collision de noms : la sortie `reference` du nœud `ref_image` (objet artefact) **écrase** dans la portée fusionnée l'entrée texte `reference` de l'humain ; tout nœud qui dépend de `ref_image` perd l'ancre textuelle (d'où D28 limité à `shots` + `brief`) | `graph.NODE_KEYS`, `executor._scope` | à trancher : rejeter au chargement (fail fast) ou implémenter le mapping |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles

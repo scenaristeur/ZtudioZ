@@ -31,4 +31,4 @@ nodes:
     options: [continue, retry, stop]
   - id: verdict
     agent: studio:agent/continuity-checker
-    needs: [images, gate_images]
+    needs: [images, gate_images, shots]
