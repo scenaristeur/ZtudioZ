@@ -24,6 +24,12 @@ export const api = {
   graph: (slug, runId) => request(`/api/projects/${slug}/runs/${runId}/graph`),
   journal: (slug, runId) =>
     request(`/api/projects/${slug}/journal?run=${encodeURIComponent(runId)}`),
+  next: (slug) => request(`/api/projects/${slug}/next`),
+  startRun: (slug, workflow, inputs) =>
+    request(`/api/projects/${slug}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({ workflow, inputs }),
+    }),
   answer: (slug, runId, gateId, answer, feedback = '') =>
     request(`/api/projects/${slug}/runs/${runId}/gates/${gateId}`, {
       method: 'POST',

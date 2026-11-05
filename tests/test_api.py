@@ -283,6 +283,58 @@ def test_api_retry_avec_feedback_relance_l_etape(tmp_path):
     asyncio.run(scenario())
 
 
+def test_api_next_et_lancement_du_palier_suivant(tmp_path):
+    root, path = project(tmp_path)
+    done = asyncio.run(
+        make_executor(path).run(
+            "studio:workflow/m0-conversation",
+            {"discussion": "un phare, une voix, un choix"},
+            answers={"gate_brief": "continue", "gate_treatment": "continue"},
+        )
+    )
+    assert done.status == "completed", done.error
+
+    async def scenario():
+        app = create_app(root)
+        status, body = await get_json(app, "/api/projects/demo/next")
+        assert status == 200
+        nxt = body["next"]
+        assert nxt["workflow"].endswith("m1-scene")
+        assert "treatment" in nxt["inherited"]
+        assert nxt["missing"] == ["reference"]
+
+        status, raw = await call(
+            app,
+            "POST",
+            "/api/projects/demo/runs",
+            {"workflow": nxt["workflow"], "inputs": {}},
+        )
+        assert status == 400, raw
+
+        status, raw = await call(
+            app,
+            "POST",
+            "/api/projects/demo/runs",
+            {"workflow": nxt["workflow"], "inputs": {"reference": "lande bretonne"}},
+        )
+        assert status == 202, raw
+        body = json.loads(raw)
+        run_id = body["run_id"]
+
+        detail = None
+        for _ in range(300):
+            status, detail = await get_json(
+                app, f"/api/projects/demo/runs/{run_id}"
+            )
+            if status == 200 and detail["run"]["status"] != "running":
+                break
+            await asyncio.sleep(0.01)
+        assert detail["run"]["status"] == "blocked"
+        assert detail["run"]["gate"]["id"] == "gate_images"
+
+    asyncio.run(scenario())
+
+
 def test_api_sert_l_ui_si_dist_existe(tmp_path):
     root, _ = project(tmp_path)
     dist = STUDIO_ROOT.parent / "web" / "dist"

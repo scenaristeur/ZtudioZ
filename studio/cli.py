@@ -14,7 +14,7 @@ from .kernel.errors import LoadError
 from .kernel.executor import Executor
 from .kernel.journal import Journal
 from .kernel.registry import STUDIO_ROOT, load_registry
-from .project import Project, ProjectError, project_memory
+from .project import Project, ProjectError, prepare_inputs
 from .tools.images import (
     MockImageProvider,
     OpenAICompatImageProvider,
@@ -123,17 +123,7 @@ def cmd_run(args) -> int:
     explicit = dict(inputs)
     if project is not None:
         workflow = registry.workflow(args.workflow)
-        wanted = set(workflow.get("inputs") or {})
-        raw_context = workflow.get("context") or {}
-        if isinstance(raw_context, dict):
-            wanted |= set(raw_context)
-        else:
-            wanted |= {str(name) for name in raw_context}
-        memory = {
-            name: value for name, value in project_memory(project).items() if name in wanted
-        }
-        inputs = {**memory, **project.context, **explicit}
-        inherited = sorted(set(inputs) - set(explicit) - set(project.context))
+        inputs, inherited = prepare_inputs(project, workflow, explicit)
         if inherited:
             print(f"herite du journal: {', '.join(inherited)}")
 

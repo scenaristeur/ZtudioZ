@@ -12,9 +12,9 @@ from pathlib import Path
 
 from starlette.exceptions import HTTPException
 
-from ..kernel.artifacts import ArtifactStore
+from ..kernel.artifacts import ArtifactStore, digest
 from ..kernel.journal import Journal
-from ..project import Project, ProjectError
+from ..project import Project, ProjectError, prepare_inputs
 
 SLUG = re.compile(r"^[A-Za-z0-9._-]+$")
 HASH = re.compile(r"^[0-9a-f]{16}$")
@@ -102,6 +102,65 @@ def project_summary(project: Project) -> dict:
         "run_id": last["run_id"] if last else None,
         "workflow": last["workflow"] if last else None,
         "gate": last["gate"]["id"] if last and last["gate"] else None,
+    }
+
+
+NEXT_WORKFLOWS = {
+    "workflow/m0-conversation": "studio:workflow/m1-scene",
+    "workflow/m1-scene": "studio:workflow/m2-video",
+}
+
+
+def _missing_inputs(doc: dict, graph, inputs: dict) -> list[str]:
+    missing = []
+    for name, spec in (doc.get("inputs") or {}).items():
+        if isinstance(spec, dict) and spec.get("required") and name not in inputs:
+            missing.append(name)
+    for name, required in graph.context.items():
+        if required and name not in inputs:
+            missing.append(name)
+    return missing
+
+
+def next_step(project: Project, registry) -> dict | None:
+    """Palier suivant apres le dernier run termine, avec ses entrees pretes."""
+    runs = summarize(events(project))
+    completed = runs[0] if runs else None
+    if completed is None or completed["status"] != "completed" or not completed.get("workflow"):
+        return None
+    key = completed["workflow"].split("#")[-1]
+    target = NEXT_WORKFLOWS.get(key)
+    if target is None:
+        return None
+
+    doc = registry.workflow(target)
+    graph = registry.graph(target)
+    inputs, inherited = prepare_inputs(project, doc, {})
+    missing = _missing_inputs(doc, graph, inputs)
+    return {
+        "workflow": target,
+        "label": doc.get("name") or target,
+        "inputs": inputs,
+        "inherited": inherited,
+        "missing": missing,
+        "ready": not missing,
+    }
+
+
+def start_run(project: Project, registry, workflow_id: str, explicit: dict) -> dict:
+    """Prepare un nouveau run ; l'execution est lancee par l'appelant."""
+    doc = registry.workflow(workflow_id)
+    graph = registry.graph(workflow_id)
+    inputs, inherited = prepare_inputs(project, doc, explicit)
+    missing = _missing_inputs(doc, graph, inputs)
+    if missing:
+        raise HTTPException(400, f"entrees manquantes: {', '.join(missing)}")
+    run_id = digest([doc["@id"], inputs])
+    return {
+        "workflow": doc["@id"],
+        "inputs": inputs,
+        "inherited": inherited,
+        "run_id": run_id,
     }
 
 

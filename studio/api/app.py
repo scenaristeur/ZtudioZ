@@ -84,6 +84,52 @@ def create_app(projects_root: str | Path, registry=None) -> Starlette:
         project = service.resolve_project(root, request.path_params["slug"])
         return JSONResponse(service.run_detail(project, request.path_params["run_id"]))
 
+    async def next_step(request):
+        project = service.resolve_project(root, request.path_params["slug"])
+        return JSONResponse({"next": service.next_step(project, registry)})
+
+    async def start_run(request):
+        project = service.resolve_project(root, request.path_params["slug"])
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "corps JSON invalide") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "corps JSON invalide")
+        workflow = body.get("workflow")
+        explicit = body.get("inputs") or {}
+        if not isinstance(workflow, str) or not isinstance(explicit, dict):
+            raise HTTPException(400, "workflow et inputs requis")
+
+        slug = project.root.name
+        if slug in running:
+            raise HTTPException(409, "un run est deja en cours sur ce projet")
+        prepared = service.start_run(project, registry, workflow, explicit)
+
+        executor = build_executor(project, registry)
+        running[slug] = prepared["run_id"]
+
+        async def launch():
+            try:
+                await executor.run(prepared["workflow"], prepared["inputs"])
+            except Exception:
+                logger.exception("run %s: lancement en echec", prepared["run_id"])
+            finally:
+                running.pop(slug, None)
+
+        task = asyncio.create_task(launch())
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
+        return JSONResponse(
+            {
+                "run_id": prepared["run_id"],
+                "workflow": prepared["workflow"],
+                "inherited": prepared["inherited"],
+                "status": "started",
+            },
+            status_code=202,
+        )
+
     async def run_graph(request):
         project = service.resolve_project(root, request.path_params["slug"])
         return JSONResponse(
@@ -159,6 +205,8 @@ def create_app(projects_root: str | Path, registry=None) -> Starlette:
         Route("/api/projects", list_projects),
         Route("/api/projects/{slug}", project_detail),
         Route("/api/projects/{slug}/journal", journal),
+        Route("/api/projects/{slug}/next", next_step),
+        Route("/api/projects/{slug}/runs", start_run, methods=["POST"]),
         Route("/api/projects/{slug}/runs/{run_id}", run_detail),
         Route("/api/projects/{slug}/runs/{run_id}/graph", run_graph),
         Route("/api/projects/{slug}/artifacts/{artifact}", artifact),

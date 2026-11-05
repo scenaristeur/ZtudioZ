@@ -50,6 +50,31 @@
         </nav>
         <p v-else class="muted">Aucun run dans ce projet.</p>
 
+        <section v-if="next" class="next-step">
+          <h2>Palier suivant : {{ next.label }}</h2>
+          <p class="muted small">
+            Herite du run precedent :
+            {{ next.inherited.length ? next.inherited.join(', ') : 'aucune entree' }}
+          </p>
+          <div v-for="key in next.missing" :key="key" class="next-input">
+            <label :for="`next-${key}`">{{ key }}</label>
+            <textarea
+              :id="`next-${key}`"
+              v-model="nextInputs[key]"
+              rows="3"
+              :placeholder="key === 'reference'
+                ? 'Ancre visuelle : lieu, lumiere, palette, epoque...'
+                : 'Valeur attendue par le workflow (texte ou JSON)'"
+            ></textarea>
+          </div>
+          <p v-if="next.missing.includes('plans')" class="muted small">
+            M2 demande des fiches de plans (image + mouvement) : collez le JSON des plans.
+          </p>
+          <button class="launch" :disabled="busy || !canLaunchNext" @click="launchNext">
+            Lancer {{ next.label }}
+          </button>
+        </section>
+
         <section v-if="graph" class="workflow">
           <div v-if="graph.run" class="run-summary">
             <span class="badge" :class="graph.run.status">{{ graph.run.status }}</span>
@@ -186,9 +211,15 @@ const journal = ref([])
 const error = ref('')
 const busy = ref(false)
 const feedback = ref('')
+const next = ref(null)
+const nextInputs = ref({})
 let timer = null
 
 const runs = computed(() => project.value?.runs || [])
+const canLaunchNext = computed(() => {
+  if (!next.value) return false
+  return next.value.missing.every((key) => (nextInputs.value[key] || '').trim())
+})
 const nodes = computed(() =>
   Object.fromEntries((graph.value?.nodes || []).map((node) => [node.id, node])),
 )
@@ -234,13 +265,20 @@ async function load() {
     const list = await api.projects()
     projects.value = list.projects || []
     if (!slug.value && projects.value.length) {
-      slug.value = projects.value[0].slug
+      const saved = localStorage.getItem('studio.slug')
+      slug.value =
+        (saved && projects.value.some((project) => project.slug === saved) && saved) ||
+        projects.value[0].slug
     }
     if (!slug.value) {
       project.value = null
       return
     }
     project.value = await api.project(slug.value)
+    next.value = (await api.next(slug.value)).next
+    if (!next.value) {
+      nextInputs.value = {}
+    }
     const ids = runs.value.map((run) => run.run_id)
     if (!selectedRun.value || !ids.includes(selectedRun.value)) {
       selectedRun.value = ids[0] || ''
@@ -258,11 +296,14 @@ async function load() {
   }
 }
 
-function selectProject(next) {
-  slug.value = next
+function selectProject(nextSlug) {
+  slug.value = nextSlug
+  localStorage.setItem('studio.slug', nextSlug)
   selectedRun.value = ''
   graph.value = null
   journal.value = []
+  next.value = null
+  nextInputs.value = {}
   load()
 }
 
@@ -293,6 +334,30 @@ async function answer(option) {
 
 function optionLabel(option) {
   return { continue: 'Continuer', retry: 'Nouvelle version', stop: 'Arreter' }[option] || option
+}
+
+async function launchNext() {
+  if (!next.value || !canLaunchNext.value) return
+  const inputs = {}
+  for (const key of next.value.missing) {
+    const raw = (nextInputs.value[key] || '').trim()
+    try {
+      inputs[key] = raw.startsWith('{') || raw.startsWith('[') ? JSON.parse(raw) : raw
+    } catch {
+      inputs[key] = raw
+    }
+  }
+  busy.value = true
+  try {
+    await api.startRun(slug.value, next.value.workflow, inputs)
+    next.value = null
+    nextInputs.value = {}
+    await load()
+  } catch (exc) {
+    error.value = exc.message
+  } finally {
+    busy.value = false
+  }
 }
 
 onMounted(() => {

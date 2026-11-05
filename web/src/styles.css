@@ -367,6 +367,56 @@ h2 {
   background: rgba(224, 168, 0, 0.06);
 }
 
+.next-step {
+  margin: 18px 0 24px;
+  padding: 16px;
+  border: 1px solid rgba(90, 169, 255, 0.55);
+  border-radius: 12px;
+  background: rgba(90, 169, 255, 0.06);
+}
+
+.next-step h2 {
+  margin-bottom: 6px;
+}
+
+.next-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.next-input label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.next-input textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0a0c10;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.next-step button.launch {
+  margin-top: 14px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--blue);
+  color: var(--blue);
+  background: var(--panel);
+}
+
+.next-step button.launch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .gate-actions {
   display: flex;
   gap: 8px;

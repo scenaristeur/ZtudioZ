@@ -141,6 +141,11 @@ python -m studio.cli --runs $RUNS run studio:workflow/m0-conversation \
 Le feedback est injecté dans l'étape rejouée et journalisé (`gate_retry.feedback`) ; il
 produit une **nouvelle version**, pas une correction en place. Dans l'UI, c'est la zone de
 texte sous la gate + « Créer une nouvelle version ».
+
+Après un run terminé, l'UI affiche **« Palier suivant »** : entrées héritées, champs
+manquants (ex. `reference` pour M1) et bouton de lancement. API : `GET /api/projects/<slug>/next`
+et `POST /api/projects/<slug>/runs` (`{"workflow": "...", "inputs": {...}}`). Aucune valeur
+visuelle n'est inventée : si `reference` manque, c'est l'humain qui la saisit.
 Le `--input` doit être **identique** (le run_id en dérive) ; les nœuds déjà faits ne sont
 jamais repayés (cache + journal). Récupère le **brief complet** (`outputs.brief`) : il doit
 repartir avec toi jusqu'à M1, ce n'est pas un artefact mort.

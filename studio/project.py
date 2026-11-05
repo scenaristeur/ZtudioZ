@@ -168,6 +168,28 @@ def project_memory(project: "Project") -> dict[str, Any]:
     return memory
 
 
+def prepare_inputs(
+    project: "Project", workflow: dict, explicit: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Assemble les entrees d'un run : memoire du projet, contexte, explicite.
+
+    Seules les cles attendues par le workflow (inputs ou context) sont heritees
+    du journal. Priorite : `--input` explicite > `context` du projet > journal.
+    """
+    wanted = set(workflow.get("inputs") or {})
+    raw_context = workflow.get("context") or {}
+    if isinstance(raw_context, dict):
+        wanted |= set(raw_context)
+    else:
+        wanted |= {str(name) for name in raw_context}
+    memory = {
+        name: value for name, value in project_memory(project).items() if name in wanted
+    }
+    inputs = {**memory, **project.context, **explicit}
+    inherited = sorted(set(inputs) - set(explicit) - set(project.context))
+    return inputs, inherited
+
+
 def _read(path: Path) -> dict:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
