@@ -12,7 +12,7 @@ inputs:
   item:
     type: object
     required: true
-  reference:
+  reference_image:
     type: object
     required: true
 outputs:

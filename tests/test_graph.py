@@ -2,7 +2,7 @@
 
 import pytest
 
-from studio.kernel.errors import GraphError
+from studio.kernel.errors import GraphError, LoadError
 from studio.kernel.registry import load_registry
 from tests.helpers import ECHO_AGENT, ECHO_TOOLS, catalog
 
@@ -35,6 +35,16 @@ def test_levels_group_independent_nodes(tmp_path):
     graph = build(tmp_path).graph("studio:workflow/diamond")
 
     assert graph.levels == [["a"], ["b", "c"], ["d"]]
+
+
+def test_un_noeud_ne_peut_pas_declarer_inputs_ou_outputs(tmp_path):
+    for term in ("inputs", "outputs"):
+        workflow = DIAMOND.replace(
+            "  - id: a\n    agent: studio:agent/echo",
+            f"  - id: a\n    agent: studio:agent/echo\n    {term}:\n      brief: {{type: object}}",
+        )
+        with pytest.raises(LoadError, match=term):
+            build(tmp_path, workflow).graph("studio:workflow/diamond")
 
 
 def test_cycle_is_rejected(tmp_path):

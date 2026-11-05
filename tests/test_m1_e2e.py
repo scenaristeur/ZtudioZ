@@ -118,6 +118,17 @@ def test_second_identical_run_is_fully_cached(tmp_path):
     assert (provider.calls, image.calls) == calls
 
 
+def test_la_planche_de_reference_ne_masque_pas_l_ancre_texte():
+    """D29 : la sortie image ne doit pas ecraser l'entree texte `reference`."""
+    registry = load_registry(STUDIO_ROOT)
+    keeper = registry.agent("studio:agent/reference-keeper")
+    creator = registry.agent("studio:agent/image-creator")
+
+    assert "reference_image" in keeper["outputs"]
+    assert "reference" not in keeper["outputs"]
+    assert "reference_image" in creator["inputs"]
+
+
 def test_reference_change_invalidates_downstream_only(tmp_path):
     executor, provider, image = make(tmp_path)
 
@@ -141,7 +152,7 @@ def test_reference_change_invalidates_downstream_only(tmp_path):
         entry = executor.store.get(state.artifacts[unit])
         parents |= set(executor.store.lineage(entry["image"]["artifact"]).parents)
     ref_artifact = state.artifacts["ref_image"]
-    ref_binary = executor.store.get(ref_artifact)["reference"]["artifact"]
+    ref_binary = executor.store.get(ref_artifact)["reference_image"]["artifact"]
     assert ref_binary in parents
 
 

@@ -13,6 +13,6 @@ inputs:
     type: string
     required: true
 outputs:
-  reference:
+  reference_image:
     type: object
 budget: 0.50

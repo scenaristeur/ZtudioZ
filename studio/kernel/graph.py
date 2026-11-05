@@ -22,8 +22,6 @@ NODE_KEYS = {
     "on_item_failure",
     "question",
     "options",
-    "inputs",
-    "outputs",
     "budget",
     "name",
     "description",
