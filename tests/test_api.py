@@ -228,6 +228,21 @@ def test_api_repond_aux_gates_jusqu_au_bout(tmp_path):
     asyncio.run(scenario())
 
 
+def test_summarize_expose_l_erreur_du_dernier_echec():
+    from studio.api.service import summarize
+
+    events = [
+        {"run": "r", "type": "run_started", "workflow": "w"},
+        {"run": "r", "type": "node_failed", "node": "treatment", "error": "cle absente"},
+        {"run": "r", "type": "run_finished", "status": "failed"},
+    ]
+
+    run = summarize(events)[0]
+
+    assert run["status"] == "failed"
+    assert run["error"] == "cle absente"
+
+
 def test_api_sert_l_ui_si_dist_existe(tmp_path):
     root, _ = project(tmp_path)
     dist = STUDIO_ROOT.parent / "web" / "dist"

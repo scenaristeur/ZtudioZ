@@ -72,7 +72,9 @@ python -m studio.cli serve --projects runs --port 8000
   relance en arrière-plan (202), puis suivre le journal.
 
 L'API ne lance pas encore de nouveaux runs : elle répond aux gates. Pas d'authentification —
-écoute sur `127.0.0.1` uniquement. Un seul run à la fois par projet.
+écoute sur `127.0.0.1` uniquement. Un seul run à la fois par projet. `studio serve` charge
+automatiquement `.env` (sans écraser une variable déjà exportée) ; une erreur de run est
+exposée dans le résumé et affichée dans l'UI.
 
 ### UI web
 

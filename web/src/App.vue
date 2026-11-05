@@ -20,6 +20,9 @@
 
     <main class="content">
       <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="graph && graph.run && graph.run.error" class="error">
+        Echec du run : {{ graph.run.error }}
+      </p>
 
       <template v-if="project">
         <header class="project-head">

@@ -215,11 +215,41 @@ def cmd_journal(args) -> int:
     return 0
 
 
+def load_env_file(path: str | Path) -> None:
+    """Charge un `.env` local sans ecraser l'environnement deja pose.
+
+    Les secrets restent hors du depot : le serveur local peut demarrer sans
+    export manuel, mais une variable explicitement posee par l'operateur gagne.
+    """
+    import os
+
+    candidate = Path(path)
+    if not candidate.is_absolute() and not candidate.exists():
+        candidate = STUDIO_ROOT.parent / candidate
+    if not candidate.exists():
+        return
+    for raw in candidate.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if value[:1] in ("'", '"'):
+            quote = value[0]
+            end = value.find(quote, 1)
+            value = value[1:end] if end != -1 else value[1:]
+        else:
+            value = value.split(" #", 1)[0].strip()
+        os.environ.setdefault(key, value)
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
     from .api.app import create_app
 
+    load_env_file(args.env_file)
     uvicorn.run(create_app(args.projects), host=args.host, port=args.port)
     return 0
 
@@ -253,6 +283,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--projects", default="runs", help="racine des projets")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--env-file", default=".env", help="fichier de variables locales")
     serve.set_defaults(func=cmd_serve)
 
     invalidate = sub.add_parser("invalidate", help="purge le cache d'un artefact et de son aval")

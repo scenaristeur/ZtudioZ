@@ -53,6 +53,7 @@ def summarize(events: list[dict]) -> list[dict]:
                 "status": "running",
                 "cost": 0.0,
                 "gate": None,
+                "error": None,
                 "started": None,
                 "finished": None,
                 "nodes": [],
@@ -64,6 +65,7 @@ def summarize(events: list[dict]) -> list[dict]:
             if run["workflow"] is None:
                 run["workflow"] = event.get("workflow")
             run["started"] = run["started"] or event.get("ts")
+            run["error"] = None
             if run["status"] == "blocked":
                 run["status"] = "running"
         elif kind == "node_finished":
@@ -71,6 +73,8 @@ def summarize(events: list[dict]) -> list[dict]:
             if "#" not in node:
                 run["nodes"].append(node)
                 run["cost"] += float(event.get("cost", 0.0) or 0.0)
+        elif kind == "node_failed":
+            run["error"] = event.get("error")
         elif kind == "gate_asked":
             run["gate"] = {
                 "id": event.get("node"),
