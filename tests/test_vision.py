@@ -40,7 +40,7 @@ def run_m1(tmp_path):
         image=MockImageProvider(),
     )
     result = asyncio.run(
-        executor.run("studio:workflow/m1-scene", INPUTS, answers={"gate_images": "continue"})
+        executor.run("studio:workflow/m1-scene", INPUTS, answers={"gate_images": "continue", "gate_verdict": "continue"})
     )
     return result, provider
 

@@ -339,7 +339,7 @@ def test_feu_follet_ne_peut_plus_produire_six_plans(tmp_path):
     )
 
     result = asyncio.run(
-        executor.run("studio:workflow/m1-scene", M1_INPUTS, answers={"gate_images": "continue"})
+        executor.run("studio:workflow/m1-scene", M1_INPUTS, answers={"gate_images": "continue", "gate_verdict": "continue"})
     )
 
     assert result.status == "completed", result.error
@@ -360,7 +360,7 @@ def test_sans_contrainte_m1_produit_tous_les_plans(tmp_path):
 
     inputs = {**M1_INPUTS, "brief": {k: v for k, v in FEU_FOLLET.items() if k != "constraints"}}
     result = asyncio.run(
-        executor.run("studio:workflow/m1-scene", inputs, answers={"gate_images": "continue"})
+        executor.run("studio:workflow/m1-scene", inputs, answers={"gate_images": "continue", "gate_verdict": "continue"})
     )
 
     assert result.status == "completed", result.error
@@ -455,7 +455,7 @@ def test_un_brief_a_deux_plans_traverse_m1_sans_contradiction(tmp_path):
     )
 
     result = asyncio.run(
-        executor.run("studio:workflow/m1-scene", M1_INPUTS, answers={"gate_images": "continue"})
+        executor.run("studio:workflow/m1-scene", M1_INPUTS, answers={"gate_images": "continue", "gate_verdict": "continue"})
     )
 
     assert result.status == "completed", result.error

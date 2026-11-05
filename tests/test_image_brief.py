@@ -48,7 +48,7 @@ def make(tmp_path):
         journal=Journal(tmp_path / "journal.jsonl"),
         image=image,
     )
-    return executor, image
+    return executor, image, provider
 
 
 def image_prompts(image):
@@ -56,7 +56,7 @@ def image_prompts(image):
 
 
 def test_les_images_recoivent_l_ancre_et_les_contraintes_du_brief(tmp_path):
-    executor, image = make(tmp_path)
+    executor, image, _ = make(tmp_path)
 
     result = asyncio.run(executor.run("studio:workflow/m1-scene", INPUTS))
 
@@ -71,7 +71,7 @@ def test_les_images_recoivent_l_ancre_et_les_contraintes_du_brief(tmp_path):
 
 
 def test_un_retry_de_gate_regenere_les_images_avec_le_feedback(tmp_path):
-    executor, image = make(tmp_path)
+    executor, image, _ = make(tmp_path)
     asyncio.run(executor.run("studio:workflow/m1-scene", INPUTS))
     before = image.calls
 
@@ -88,3 +88,35 @@ def test_un_retry_de_gate_regenere_les_images_avec_le_feedback(tmp_path):
     assert retried.pending_gate.id == "gate_images"
     assert image.calls > before
     assert "rends la brume plus epaisse" in image_prompts(image)[-1]
+
+
+def test_gate_verdict_retry_rejoue_images_et_verdict(tmp_path):
+    executor, image, provider = make(tmp_path)
+    asyncio.run(
+        executor.run(
+            "studio:workflow/m1-scene",
+            INPUTS,
+            answers={"gate_images": "continue"},
+        )
+    )
+    images_before = image.calls
+    verdicts_before = len(
+        [r for r in provider.records if r["agent"].endswith("continuity-checker")]
+    )
+
+    retried = asyncio.run(
+        executor.run(
+            "studio:workflow/m1-scene",
+            INPUTS,
+            answers={"gate_verdict": "retry"},
+            feedback={"gate_verdict": "l'image 2 doit montrer les machines de la forteresse"},
+        )
+    )
+
+    assert retried.status == "blocked"
+    assert retried.pending_gate.id == "gate_verdict"
+    assert image.calls > images_before
+    assert len(
+        [r for r in provider.records if r["agent"].endswith("continuity-checker")]
+    ) > verdicts_before
+    assert "l'image 2 doit montrer les machines" in image_prompts(image)[-1]

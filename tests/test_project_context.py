@@ -181,6 +181,7 @@ def test_cli_projet_nourrit_m1_avec_son_contexte(tmp_path):
                 "reference": "Phare blanc et rouge, mer grise, crepuscule froid",
             }),
             "--answer", "gate_images=continue",
+            "--answer", "gate_verdict=continue",
         ],
         cwd=STUDIO_ROOT.parent,
         capture_output=True,

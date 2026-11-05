@@ -33,3 +33,8 @@ nodes:
   - id: verdict
     agent: studio:agent/continuity-checker
     needs: [images, gate_images, shots]
+  - id: gate_verdict
+    type: studio:HumanGate
+    needs: [verdict, images]
+    question: Le verdict du controleur est-il convaincant ?
+    options: [continue, retry, stop]

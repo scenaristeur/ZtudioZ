@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 206 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 207 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -167,7 +167,7 @@ studio/
   web/             UI Vue 3 + Vite pilotee par le graphe (dist servi par l'API)
   cli.py           run | journal | validate | invalidate | serve | --skills-root | --project
   project.py       studio.yaml -> providers + contexte + racine artefacts/journal
-tests/             36 fichiers, 206 tests
+tests/             36 fichiers, 207 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -645,11 +645,11 @@ Tests ajoutés pour D29 / D23 / D26 — **+11 tests, 197 verts** :
 | `test_vision.py` (D23) | 5 | `continuity-checker` utilise `gemma-4-31b-it`, déclare `reference`, reçoit les 2 binaires (pas seulement des refs), le contenu est un data URI, une réponse enrobée est parsée |
 | `test_freeform.py` (D26) | 4 | le prompt exige une entrée par contrainte freeform (`text`, `respected`, `evidence`), le schéma l'accepte, refuse `ok=true` avec `respected=false`, le verdict structuré est produit et validé |
 
-Tests ajoutés pour les images et le brief — **+2 tests, 206 verts** :
+Tests ajoutés pour les images et le brief — **+3 tests, 207 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
-| `test_image_brief.py` | 2 | le prompt image contient le plan, l'ancre visuelle et les contraintes freeform ; un `retry` de `gate_images` avec feedback regénère réellement les images (caches d'unités `#i` invalidés) |
+| `test_image_brief.py` | 3 | le prompt image contient le plan, l'ancre visuelle et les contraintes freeform ; un `retry` de `gate_images` avec feedback regénère réellement les images ; un `retry` de `gate_verdict` rejoue images **et** verdict avec le feedback |
 
 Tests ajoutés pour l'enchaînement des paliers depuis l'API — **+1 test, 204 verts** :
 
@@ -737,7 +737,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 206 passed
+.venv/bin/python -m pytest tests/      # 207 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -824,6 +824,7 @@ condition de :
 | 2026-11-05 | enchaînement | **Le palier suivant ne se lançait pas** : M0 et M1 sont deux workflows, `continue` validait seulement M0. Ajout de `GET /next` (palier suivant + entrées héritées + manquantes) et `POST /runs` (lancement avec les entrées fournies). UI : panneau « Palier suivant » avec champ `reference` et bouton « Lancer M1 ». M1 reste à lancer explicitement : aucune décision visuelle n'est prise à la place de l'humain | assistant |
 | 2026-11-05 | images | **Images unies en M1** : le projet `madmax-2208` utilisait `image: mock` (PNG 8x8 unis) et la référence saisie était `ok`. De plus le prompt image ignorait l'ancre et le brief, et un retry de `gate_images` réutilisait les caches des unités `images#i`. Corrigé : prompt image = plan + ancre + freeform + feedback, invalidation des unités au retry, provider Pollinations pour le projet. 2 tests | assistant + humain |
 | 2026-11-05 | run réel | **M1 réel `madmax-2208`** : run `53a36f9e9c7e9308`, ancre « désert de sel et de fer, nuit, brume, lumière jaune, citadelle de fer, blanc-rouille, documentaire ». Pollinations `flux` 256×256 : 4 JPEG réels (1 planche + 3 plans, 10-16 Ko), gate `gate_images` bloquée. L'ancien run `38dd…` (mock + référence « ok ») reste dans l'historique | assistant + humain |
+| 2026-11-05 | M1 | **Le verdict n'était pas actionnable** : après `gate_images=continue`, M1 se terminait sur `verdict`, sans gate. Ajout de `gate_verdict` (`needs: [verdict, images]`) : `continue` clôt M1, `retry` + feedback régénère les images **et** rejoue le contrôleur (gemma), puis repose la gate. `continuity-checker` v9 déclare `feedback`. 1 test ajouté, **207 verts** | assistant |
 | 2026-11-05 | D26 | **Freeform vérifiable.** Le verdict porte `constraints` (`text`, `respected`, `evidence`) ; le schéma interdit `ok=true` si une contrainte est `respected=false`. Prompt v6 exige une entrée par contrainte freeform. 4 tests. **Vérifié en réel** : Albert rend `ok=false` argumenté et `{"text":"pas de dialogue","respected":true,"evidence":"aucune bulle..."}` | assistant |
 
 ---

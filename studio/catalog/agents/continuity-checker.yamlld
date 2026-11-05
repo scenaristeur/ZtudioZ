@@ -3,7 +3,7 @@
 type: studio:LlmAgent
 name: Controleur de continuite
 description: Verifie visuellement chaque plan et le respect du brief par les images.
-version: 8
+version: 9
 model: gemma-4-31b-it
 prompt: |
   Tu recois les plans annonces, les images produites (les pixels eux-memes),
@@ -19,6 +19,8 @@ prompt: |
   Si une contrainte n'est pas respectee, `ok` vaut false : le schema refuse
   `ok=true` avec une contrainte `respected=false`. Sans freeform, `constraints`
   peut etre vide ou absent.
+  Si `feedback` est fourni, il vient de l'humain : tiens-en compte dans ta
+  nouvelle evaluation, sans ignorer ce que tu vois.
   Tu ne pretends jamais voir ce que l'image ne montre pas. Chaque constat cite
   ce que tu vois (« sur l'image 1, ... ») ou sa source textuelle (« d'apres le
   brief »). Tu n'inventes aucune description.
@@ -40,6 +42,8 @@ inputs:
     type: string
   brief:
     type: object
+  feedback:
+    type: string
 outputs:
   verdict:
     type: object

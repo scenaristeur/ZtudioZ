@@ -53,7 +53,7 @@ def make(tmp_path, responses=None):
 def run_full(executor, **overrides):
     inputs = {**INPUTS, **overrides}
     return asyncio.run(
-        executor.run("studio:workflow/m1-scene", inputs, answers={"gate_images": "continue"})
+        executor.run("studio:workflow/m1-scene", inputs, answers={"gate_images": "continue", "gate_verdict": "continue"})
     )
 
 
@@ -185,6 +185,7 @@ def test_cli_runs_m1_with_mock_provider(tmp_path):
             "run", "studio:workflow/m1-scene",
             "--input", json.dumps(INPUTS),
             "--answer", "gate_images=continue",
+            "--answer", "gate_verdict=continue",
         ],
         cwd=STUDIO_ROOT.parent,
         capture_output=True,
@@ -205,6 +206,7 @@ def test_cli_image_provider_can_differ_from_the_llm_provider(tmp_path):
             "run", "studio:workflow/m1-scene",
             "--input", json.dumps(INPUTS),
             "--answer", "gate_images=continue",
+            "--answer", "gate_verdict=continue",
             "--provider", "mock",
             "--image-provider", "openai",
         ],

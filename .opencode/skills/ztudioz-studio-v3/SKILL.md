@@ -153,12 +153,13 @@ Le `--input` doit être **identique** (le run_id en dérive) ; les nœuds déjà
 jamais repayés (cache + journal). Récupère le **brief complet** (`outputs.brief`) : il doit
 repartir avec toi jusqu'à M1, ce n'est pas un artefact mort.
 
-### M1 — traitement -> plans -> images -> gate -> verdict
+### M1 — traitement -> plans -> images -> gate -> verdict -> gate
 ```bash
 python -m studio.cli --runs $RUNS run studio:workflow/m1-scene \
   --provider openai --image-provider pollinations \
   --input '{"treatment": "<sortie du M0>", "reference": "<description visuelle ancre>", "brief": <outputs.brief du M0>}'
-python -m studio.cli --runs $RUNS run studio:workflow/m1-scene ... --answer gate_images=continue
+python -m studio.cli --runs $RUNS run studio:workflow/m1-scene ... \
+  --answer gate_images=continue --answer gate_verdict=continue
 ```
 **Passe toujours le `brief`.** Sans lui, `brief.constraints.max_shots` est absent et le
 découpage n'est plus borné : un LLM qui surcompte les plans te les fera tous payer (c'est
@@ -172,11 +173,10 @@ chiffre à l'humain à la gate (« le découpage proposait 6 plans, 2 gardés »
 
 Livrables : `outputs.image[]` = références d'artefacts ; les vraies images sont dans
 `runs/<slug>/artifacts/<hash>.jpg` — ouvres-les, c'est ce que l'humain doit voir à la gate.
-Attention : le verdict du `continuity-checker` compare **le texte** — plans, brief, contraintes
-— et il le dit. Il **ne voit pas les pixels** (dette D23) : ne le présente jamais comme une
-validation visuelle. Les contraintes non chiffrées (`constraints.freeform`, « pas de dialogue »,
-« fin ambiguë ») ne sont vérifiées que comme « non contredites par les prompts » (dette D26).
-L'humain a vu les images, c'est lui qui a jugé à la gate.
+Attention : le verdict du `continuity-checker` voit désormais **les pixels** (Albert
+`gemma-4-31b-it`) et juge chaque contrainte `freeform` (`respected`/`evidence`). Il reste un
+avis : c'est l'humain qui tranche à `gate_verdict`. Si le verdict n'est pas convaincant,
+`retry` + feedback sur `gate_verdict` régénère les images **et** rejoue le contrôleur.
 
 ### M2 — plans -> vidéos -> gate -> montage -> gate -> ffprobe
 

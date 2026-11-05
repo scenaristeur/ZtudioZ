@@ -61,6 +61,7 @@ def m1(root, inputs):
         root, "run", "studio:workflow/m1-scene",
         "--input", json.dumps(inputs),
         "--answer", "gate_images=continue",
+            "--answer", "gate_verdict=continue",
     )
 
 

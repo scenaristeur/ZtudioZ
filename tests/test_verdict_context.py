@@ -59,7 +59,7 @@ def run_m1(tmp_path, inputs, responses=RESPONSES):
         image=image,
     )
     result = asyncio.run(
-        executor.run("studio:workflow/m1-scene", inputs, answers={"gate_images": "continue"})
+        executor.run("studio:workflow/m1-scene", inputs, answers={"gate_images": "continue", "gate_verdict": "continue"})
     )
     return result, provider
 

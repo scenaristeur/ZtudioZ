@@ -90,7 +90,7 @@ def test_le_verdict_structure_est_produit_et_valide(tmp_path):
     )
 
     result = asyncio.run(
-        executor.run("studio:workflow/m1-scene", INPUTS, answers={"gate_images": "continue"})
+        executor.run("studio:workflow/m1-scene", INPUTS, answers={"gate_images": "continue", "gate_verdict": "continue"})
     )
 
     assert result.status == "completed", result.error
