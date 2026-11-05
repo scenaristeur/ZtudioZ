@@ -3,11 +3,12 @@ name: ztudioz-studio-v3
 description: >-
   Piloter le studio déclaratif v3 depuis une session opencode : créer un projet
   (dossier de runs), enchaîner les paliers m0-conversation (discussion -> brief ->
-  traitement), m1-scene (plans + images + gate + verdict) et m2-montage (clips, ffmpeg,
-  ffprobe), gérer les gates humaines (continue/retry/stop), reprendre après Ctrl-C,
-  lire le journal et les coûts, invalider une branche par lignée, brancher les skills
-  v1 et les providers réels (Albert, Pollinations). Déclencheur : studio v3, nouveau
-  projet v3, m0, m1, m2, gate, runs, artifacts, invalidate, albert, pollinations.
+  traitement), m1-scene (plans + images + gate + verdict) et m2-video (images -> vraies
+  vidéos -> montage, ffmpeg, ffprobe), gérer les gates humaines (continue/retry/stop),
+  reprendre après Ctrl-C, lire le journal et les coûts, invalider une branche par lignée,
+  brancher les skills v1 et les providers réels (Albert, Pollinations). Déclencheur : studio
+  v3, nouveau projet v3, m0, m1, m2, vidéo, gate, runs, artifacts, invalidate, albert,
+  pollinations.
 ---
 
 # Studio v3 — assistant de production déclaratif
@@ -34,6 +35,8 @@ export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
   `mock/*` des agents cèdent la place au modèle opérateur).
 - Images : `--image-provider pollinations` (gratuit : 1 image / 45 s / IP + quota global
   partagé ; l'adaptateur honore les délais annoncés, un run M1 complet prend ~4-5 min).
+- Vidéos : `--video-provider pollinations` (`wan-fast` défaut, ~0,01 $/s ; `grok-video-pro`
+  ~0,05 $/s via `STUDIO_VIDEO_MODEL`). Facturé à la seconde, budget refusé avant l'appel.
 - Démo sans réseau : omit les flags, tout est mock (0 coût, 0 réseau).
 
 ## Créer un projet et dérouler les paliers
@@ -80,13 +83,32 @@ validation visuelle. Les contraintes non chiffrées (`constraints.freeform`, « 
 « fin ambiguë ») ne sont vérifiées que comme « non contredites par les prompts » (dette D26).
 L'humain a vu les images, c'est lui qui a jugé à la gate.
 
-### M2 — plans -> clips -> montage -> gate -> ffprobe
+### M2 — plans -> vidéos -> gate -> montage -> gate -> ffprobe
+
+Deux workflows :
+- **`m2-video`** : de vraies vidéos (image + mouvement -> mp4 généré). Une gate **avant** la
+  génération, une gate sur les clips, puis le montage. C'est le chemin normal.
+- `m2-montage` : repli explicite sans génération (clips de couleur, ou images tenues fixes).
+
 ```bash
-python -m studio.cli --runs $RUNS run studio:workflow/m2-montage \
-  --input '{"clips": [{"color": "navy", "duration": 0.4}, ...]}'
-python -m studio.cli --runs $RUNS run studio:workflow/m2-montage ... --answer gate_montage=continue
+python -m studio.cli --runs $RUNS run studio:workflow/m2-video \
+  --provider mock --video-provider pollinations \
+  --input '{"plans": [{"image": {"artifact": "<hash image M1>"}, "prompt": "<plan>", "motion": "<mouvement>", "duration": 5}]}'
 ```
-`outputs.probe = {duration, codec, streams}` — conformité mesurée, pas déclarée.
+
+Le workflow s'arrête d'abord à `gate_storyboard` : **aucun appel payant n'est parti**. Montre
+les fiches (image, prompt, mouvement, durée) et attends l'accord. Le mouvement est une décision
+visuelle : propose-le, ne l'impose pas.
+
+Après `--answer gate_storyboard=continue`, la génération part. Compte ~4-5 min par clip.
+Puis `gate_videos` : donne les chemins `runs/<slug>/artifacts/<hash>.mp4`, l'humain regarde —
+**ne prétends jamais voir les vidéos**. Ensuite `gate_montage`, puis `probe`.
+
+- L'image de référence doit être publique : `tools/video.py` la téléverse sur tmpfiles.org
+  (URL 48 h). C'est un export vers un tiers, dis-le à l'humain (dette D30).
+- `m2-video` ne devine pas les fiches : construis `plans` depuis `shots` + `image` de M1.
+- Un clip en panne n'arrête pas le montage des autres ; le journal écrit `item_failed`.
+- `outputs.probe = {duration, codec, streams}` — conformité mesurée, pas déclarée.
 
 ## Inspecter, reprendre, corriger
 
@@ -102,7 +124,7 @@ python -m studio.cli --skills-root /home/smag/dev/ZtudioZ/.opencode/skills valid
 
 ## Catalogue
 
-Agents : `studio/catalog/agents/*.yamlld` (LlmAgent texte, ImageAgent, ToolAgent ffmpeg).
+Agents : `studio/catalog/agents/*.yamlld` (LlmAgent texte, ImageAgent, VideoAgent, ToolAgent ffmpeg).
 Workflows : `studio/catalog/workflows/*.yamlld`. Sorties typées : `catalog/schemas/`.
 
 Champs d'un nœud, pour écrire un workflow :

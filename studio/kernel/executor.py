@@ -70,6 +70,7 @@ class Executor:
         answers: dict[str, str] | None = None,
         max_parallel: int = 8,
         image: Any | None = None,
+        video: Any | None = None,
     ):
         self.registry = registry
         self.provider = provider
@@ -78,6 +79,7 @@ class Executor:
         self.answers = dict(answers or {})
         self.max_parallel = max_parallel
         self.image = image
+        self.video = video
         self._global = asyncio.Semaphore(max_parallel)
         self._artifacts: dict[str, str] = {}
         self._unit_costs: dict[str, float] = {}
@@ -390,6 +392,8 @@ class Executor:
     ) -> Any:
         if str(agent.get("@type", "")).endswith("ImageAgent"):
             return await self._exec_image(node, agent, scope, run_id, unit)
+        if str(agent.get("@type", "")).endswith("VideoAgent"):
+            return await self._exec_video(node, agent, scope, run_id, unit)
         if str(agent.get("@type", "")).endswith("ToolAgent"):
             return await self._exec_tool(node, agent, scope, run_id, unit)
 
@@ -489,6 +493,74 @@ class Executor:
             )
 
         name = self._output_key(agent) or "image"
+        produced = {name: binary.ref()}
+        self._validate_outputs(node, agent, produced)
+
+        consumed = self._consumed(node, resolved)
+        binary_key = self.store.put(
+            binary, parents=consumed, producer=agent["@id"], cost=cost
+        )
+        artifact = self.store.put(
+            produced, parents=(binary_key, *consumed), producer=agent["@id"], cost=cost
+        )
+        self.store.remember(cache_key, artifact)
+        self._artifacts[unit] = artifact
+        self._unit_costs[unit] = cost
+        self.journal.append(
+            "node_finished", run=run_id, node=unit, artifact=artifact, cost=cost
+        )
+        return produced
+
+    async def _exec_video(
+        self, node: Node, agent: dict, scope: dict[str, Any], run_id: str, unit: str
+    ) -> Any:
+        """VideoAgent : une image de plan + un mouvement -> un clip genere.
+
+        Le cout depend de la duree, donc l'estimation et le refus de budget
+        arrivent avant tout appel reseau : on ne paie pas un plan qu'on refuse.
+        """
+        if self.video is None:
+            raise LoadError(
+                f"noeud {node.id}: un VideoAgent demande un adaptateur video (parametre 'video')"
+            )
+
+        resolved = self._resolve_inputs(agent, scope)
+        cache_key = self.store.key(
+            [node.id, agent["@id"], agent.get("version", 1), agent.get("model", ""),
+             agent.get("prompt", ""), resolved, scope.get("item")]
+        )
+        cached = self.store.cached(cache_key)
+        if cached is not None:
+            self._unit_costs[unit] = 0.0
+            self.journal.append(
+                "node_skipped", run=run_id, node=unit, artifact=cached, reason="cache", cost=0.0
+            )
+            return self.store.get(cached)
+
+        duration = self._video_duration(resolved)
+        budget = agent.get("budget")
+        cost = float(self.video.estimate(duration))
+        if budget is not None and cost > float(budget):
+            self.journal.append(
+                "budget_refused", run=run_id, node=unit, cost=cost, budget=float(budget)
+            )
+            raise BudgetError(
+                f"budget depasse pour {node.id}: cout estime {cost} > budget {budget}"
+            )
+
+        reference = self._reference(resolved)
+        self.journal.append("node_started", run=run_id, node=unit)
+        async with self._global:
+            binary = await self.video.generate(
+                agent_id=agent["@id"],
+                model=agent.get("model", ""),
+                system=self._system(agent),
+                prompt=self._video_prompt(resolved),
+                reference=reference,
+                duration=duration,
+            )
+
+        name = self._output_key(agent) or "clip"
         produced = {name: binary.ref()}
         self._validate_outputs(node, agent, produced)
 
@@ -745,6 +817,33 @@ class Executor:
             if name not in produced:
                 raise SchemaError(f"noeud {node.id}: sortie manquante: {name}")
             jsonschema.validate(produced[name], self.registry.schema(spec["schema"]))
+
+    @staticmethod
+    def _video_duration(resolved: dict[str, Any]) -> float:
+        """Duree demandee pour le plan, en secondes. Defaut : 5 s."""
+        item = resolved.get("item")
+        value = item.get("duration") if isinstance(item, dict) else None
+        if value is None:
+            value = resolved.get("duration")
+        if value is None:
+            return 5.0
+        try:
+            duration = float(value)
+        except (TypeError, ValueError) as exc:
+            raise LoadError(f"duree video invalide: {value!r}") from exc
+        if duration <= 0:
+            raise LoadError(f"duree video invalide: {value!r} (doit etre > 0)")
+        return duration
+
+    @staticmethod
+    def _video_prompt(resolved: dict[str, Any]) -> str:
+        """Le prompt du plan, augmente du mouvement demande par l'humain."""
+        base = Executor._text_prompt(resolved)
+        item = resolved.get("item")
+        motion = item.get("motion") if isinstance(item, dict) else None
+        if isinstance(motion, str) and motion.strip():
+            return f"{base}. Mouvement: {motion.strip()}"
+        return base
 
     @staticmethod
     def _text_prompt(resolved: dict[str, Any]) -> str:

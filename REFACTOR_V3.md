@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés** — noyau complet, artefacts binaires typés et lignés,
 > adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par ffprobe,
-> échec d'item borné, sous-workflows, retry de gate, SIGINT, 138 tests verts, démos CLI
+> échec d'item borné, sous-workflows, retry de gate, SIGINT, 154 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés).
 > **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
@@ -115,18 +115,19 @@ noyau générique, avec des tests qui valident la config elle-même.
 
 ---
 
-## 4. Principe — quatre primitives, pas quarante agents
+## 4. Principe — un noyau de primitives, pas quarante agents
 
 | Primitive | Rôle | Coût | Code |
 |---|---|---|---|
 | `LlmAgent` | rôle + modèle + outils + sortie structurée | LLM | générique, un seul fichier |
 | `ToolAgent` | déterministe : ffmpeg, script, MCP, service | ~0 | adaptateur par outil |
+| `ImageAgent` / `VideoAgent` | génération média : prompt + référence → binaire | image / seconde | adaptateur par provider |
 | `HumanGate` | question bloquante, options `continue / retry / stop` | 0 | générique |
 | `Workflow` | nœud composite → **les sous-sous-tâches** | récursif | le moteur |
 
-Un agent **n'est pas du code** : c'est un document. Le code ne sert qu'à ces quatre types et
-aux adaptateurs d'outils. C'est le garde-fou anti-sur-abstraction : si un besoin ne rentre pas
-dans ces quatre types, c'est le besoin qu'il faut discuter, pas le moteur qu'il faut étendre.
+Un agent **n'est pas du code** : c'est un document. Le code ne sert qu'à ces types et aux
+adaptateurs d'outils. C'est le garde-fou anti-sur-abstraction : si un besoin ne rentre pas
+dans ces types, c'est le besoin qu'il faut discuter, pas le moteur qu'il faut étendre.
 
 ---
 
@@ -148,15 +149,16 @@ studio/
   tools/
     llm.py         Provider (protocole) · MockProvider · OpenAICompatProvider
     images.py      ImageProvider · MockImageProvider · OpenAICompat · Pollinations (quotas respectés)
-    media.py       outils livrés : clip (lavfi), montage (concat), probe (ffprobe)
+    video.py       VideoProvider · MockVideoProvider · Pollinations (image -> video, coût/seconde)
+    media.py       outils livrés : clip (lavfi ou image -> mp4), montage (concat), probe (ffprobe)
   catalog/
-    agents/*.yamlld      déclarations d'agents (LlmAgent, ImageAgent, ToolAgent)
-    workflows/*.yamlld   déclarations de graphes (m0, m1, m2)
+    agents/*.yamlld      déclarations d'agents (LlmAgent, ImageAgent, VideoAgent, ToolAgent)
+    workflows/*.yamlld   déclarations de graphes (m0, m1, m2-montage, m2-video)
     skills/<id>/SKILL.md packs de connaissance injectés dans les prompts
     schemas/*.schema.json   contrats de sortie (brief, shots, verdict, probe)
     tools.yamlld         registre des capacités (kind: python | cli | mcp) + table servers:
   cli.py           run | journal | validate | invalidate | --skills-root
-tests/             25 fichiers, 138 tests
+tests/             26 fichiers, 154 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -429,7 +431,7 @@ Chaque palier est démontrable et se termine par une validation humaine.
 |---|---|---|---|---|
 | **M0** conversation | noyau complet, 3 agents LLM, 1 gate, 1 workflow, provider mock | YAML-LD validé ; DAG exécuté ; gate bloquante ; reprise après gate ; parallélisme prouvé par test ; **0 appel réseau** | 0 | **réalisé, 29 tests verts** |
 | **M1** scénario + photos | artefacts typés + binaires, adaptateur image, vérif vision, gate sur images, invalidation par lignée | 3 shots + 3 images avec refs ; verdict vision ; coût journalisé ; 2ᵉ run = cache hit ; changement de ref → invalidation aval **uniquement** | tests 0 / run réel sur demande | **réalisé ; run réel 2026-11-05 : brief contraint (max 2 plans) → 2 plans → 2 images JPEG, 57 s** |
-| **M2** assets + montage | `ToolAgent` (ffmpeg), dispatch des outils, `on_item_failure`, sous-workflows, `retry` de gate | `ffprobe` conforme ; montage reproductible ; échec d'un item n'arrête pas le run | 0 | **réalisé, 80 tests verts** |
+| **M2** assets + montage | `ToolAgent` (ffmpeg), dispatch des outils, `on_item_failure`, sous-workflows, `retry` de gate ; puis `VideoAgent` et workflow `m2-video` | `ffprobe` conforme ; montage reproductible ; échec d'un item n'arrête pas le run ; **vraies vidéos générées avant le montage** | 0 en mock / run réel sur demande | **réalisé, 80 tests verts** ; run réel 2026-11-05 : 2 images → 2 vidéos `wan-fast` 512×512 de 5,03 s → montage 10,06 s, **0,10 $**, gate avant dépense |
 | **M3** intégration v1 | **refonte complète** de `pipeline/`, `api/`, `web/` : adaptateurs providers, routes, UI pilotée par le graphe | un projet réel avance d'un palier à l'autre depuis la CLI et depuis le web | selon run | à faire |
 | **M4** production | reprise des acquis : cohérence refs, double-ancre, keyframes, budget, rapports | un plan produit et vérifié par vision, sans régression de cohérence | selon run | à faire |
 
@@ -519,6 +521,19 @@ Vérifié en réel sur `feu-follet-v2` : `ok=true`, notes « 2 plans, 2 images, 
 correspond à son plan, max_shots=2 respecté, les contraintes freeform ne sont pas contredites par
 les prompts ». La formulation « ne sont pas contredites par les prompts » est le résultat d'une
 consigne explicite : **le contrôleur ne prétend jamais avoir vu l'image** (D23).
+
+Tests ajoutés pour M2 vidéo (de vraies vidéos avant le montage) — **+11 tests, 154 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_video.py` (contrat) | 2 | le catalogue déclare `VideoAgent` ; `m2-video` a une gate **avant** le fan-out et une gate après les clips |
+| `test_video.py` (moteur) | 4 | sans adaptateur, échec net ; aucune dépense avant la gate des fiches ; 2 vidéos → montage → `ffprobe` ; le mouvement et l'image arrivent au provider |
+| `test_video.py` (garde-fous) | 3 | une référence non image est refusée ; le coût par seconde est estimé et le budget refuse **avant** appel ; un plan en panne n'empêche pas le montage des autres |
+| `test_video.py` (trouvés en réel) | 2 | l'upload public envoie un User-Agent (tmpfiles refusait `Python-urllib` par un 403) ; le `seed` reste ≤ 2³¹−1 (Pollinations refusait un seed sur 64 bits par un 400) |
+
+Comme D27, les deux derniers tests sont nés du **run réel** : les mocks ne peuvent pas voir
+qu'un tiers bloque l'User-Agent par défaut de Python, ni qu'un paramètre dépasse la borne d'une
+API. Le premier essai réel a échoué en 1,3 s sur chacun — **aucune vidéo n'a été facturée**.
 
 ---
 
@@ -648,6 +663,11 @@ condition de :
 | 2026-11-05 | D28 | 7 tests rouges d'abord, **138 verts** : `shots` (requis) et `brief` (optionnel) entrent dans `continuity-checker`, le nœud `verdict` dépend de `shots`. Le prompt interdit de juger les pixels et exige la source de chaque constat | assistant |
 | 2026-11-05 | D28 | Vérifié en réel : premier appel → le LLM rend `{"verdict": "ok"}` (chaîne), le **schéma le refuse** — le contrat a tenu. Prompt rendu explicite (objet JSON + exemple), v4, reprise : `ok=true`, notes sourcées « d'après les prompts ». Le contrôleur ne se prétend plus aveugle, et ne prétend pas voir | assistant |
 | 2026-11-05 | D29 | Limite trouvée en nourrissant D28 : `inputs:` sur un nœud est **accepté mais ignoré** (il figure dans `NODE_KEYS`), et la sortie `reference` de `ref_image` écrase l'entrée texte `reference` dans la portée fusionnée. Le contrôleur reçoit donc `shots` + `brief`, pas l'ancre textuelle. Consigné plutôt que contourné en silence | assistant |
+| 2026-11-05 | M2 vidéo | Exigence humaine : « il faut créer les vidéos réelles avant un montage ». Les clips de M2 étaient des plans fixes (image tenue 1,5 s) : capacité absente, pas un réglage. Choix humain : **Pollinations `wan-fast`**, 2 × 5 s, 512×512, images 256 px réutilisées, ~0,10 $ | humain |
+| 2026-11-05 | M2 vidéo | 9 tests rouges d'abord : `VideoProvider` + `MockVideoProvider`, primitive `studio:VideoAgent`, workflow `m2-video` avec **gate avant dépense** puis gate sur les clips. `estimate(duration)` facture à la seconde et le budget refuse **avant** l'appel. Le pont image→clip reste le repli explicite, pas le défaut | assistant |
+| 2026-11-05 | run réel | Premier appel : **403 tmpfiles** en 1,3 s. `urllib` s'annonce `Python-urllib/3.10`, tmpfiles le bloque ; curl passe avec un UA explicite. Test rouge, UA ajouté à l'upload **et** à la page de résolution | assistant |
+| 2026-11-05 | run réel | Deuxième appel : **400 Pollinations**, corps enfin lisible — le `seed` sur 64 bits dépasse `2147483647`. Test rouge, seed ramené modulo 2³¹−1. Les deux échecs n'ont rien coûté : aucune vidéo produite | assistant |
+| 2026-11-05 | run réel | **2 vidéos `wan-fast` en 8 min 21 s** : h264 512×512, 5,03 s, 161 images chacune, 0,1000 journalisé. Gates humaines : fiches → clips → montage. Montage `concat` : 10,06 s, 322 images, 536 Ko. `probe` : h264, 10,063 s, 1 flux. **154 verts** | assistant + humain |
 
 ---
 
@@ -657,7 +677,7 @@ Liste volontairement exhaustive : c'est le carnet de charges du palier suivant, 
 empêche de croire que le noyau est fini. Clos : D1–D3 (M1), D4–D9, D13, D17, D18 (M2),
 D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp), D24 (contraintes
 transportées et bornées), D27 (schéma des plans), D28 (contexte du verdict).
-Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D29.
+Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D29, D30.
 
 | # | Écart | Où le voir | À traiter |
 |---|---|---|---|
@@ -690,6 +710,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D23, D25, D26, D29.
 | ~~D27~~ | ~~`shots.schema.json` exigeait `minItems: 3`~~ | **clos (trouvé par le run réel du 2026-11-05)** : le LLM produisait 2 plans conformes à `constraints.max_shots`, le schéma refusait (`is too short`). Le schéma contredisait la contrainte que D24 venait d'implémenter. `minItems: 1`, 2 tests : 2 plans valides, liste vide toujours refusée | — |
 | D28 | **Le `continuity-checker` est affamé** : il ne déclare que `images` en entrée et le nœud `verdict` ne dépend que de `images` + la gate. Il ne reçoit ni `shots`, ni `reference`, ni `brief`, donc son verdict est structurellement vide : `ok=false`, « impossible d'évaluer, fournissez le brief ». Distinct de D23 (absence de pixels) : même comme proxy texte il n'a rien à comparer | `catalog/agents/continuity-checker.yamlld`, `workflows/m1-scene.yamlld` (nœud `verdict`) | **clos** : `shots` (requis) et `brief` (optionnel) entrent dans l'agent, `verdict` dépend de `shots` ; 7 tests, vérifié en réel (`ok=true`, constats sourcés « d'après les prompts ») |
 | D29 | **Pas de mapping d'entrées au niveau du nœud** : `inputs:` et `outputs:` figurent dans `NODE_KEYS` donc sont **acceptés, puis ignorés** — un auteur qui croit renommer une entrée n'obtient rien. Et collision de noms : la sortie `reference` du nœud `ref_image` (objet artefact) **écrase** dans la portée fusionnée l'entrée texte `reference` de l'humain ; tout nœud qui dépend de `ref_image` perd l'ancre textuelle (d'où D28 limité à `shots` + `brief`) | `graph.NODE_KEYS`, `executor._scope` | à trancher : rejeter au chargement (fail fast) ou implémenter le mapping |
+| D30 | **La vidéo réelle dépend d'un tiers et d'un export** : Pollinations exige une image publiquement joignable, donc `tmpfiles.org` reçoit chaque image de plan (URL 48 h) ; aucun chemin local (serveur Agnes `:8765` absent). La génération part d'une image 256 px et sort en 512 : upscale assumé. Le coût (~0,01 $/s) est estimé et journalisé, jamais réconcilié avec la facture réelle | `tools/video.py` (`_upload_public`), `catalog/agents/video-maker.yamlld` | M3 : provider local ou stockage public maîtrisé, et réconciliation des coûts |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles
@@ -697,7 +718,9 @@ réellement concurrents, borne `parallel`, gate bloquante qui ne se saute pas, r
 avant appel, cache au deuxième run, journal append-only et état reconstruit ; M1 : binaires
 adressés par contenu, lignée et invalidation aval, coûts journalisés, gate sur images ; M2 :
 dispatch d'outils python/cli, `ToolAgent`, items en panne bornés, sous-workflows, retry de
-gate, SIGINT relançable, purge active au CLI, alias `as:`.
+gate, SIGINT relançable, purge active au CLI, alias `as:` ; M2 vidéo : `VideoAgent` générique,
+coût estimé à la seconde refusé **avant** appel, gates avant dépense et avant montage, item en
+panne borné, deux contrats réels (UA, borne du seed) verrouillés par test.
 
 ---
 

@@ -19,6 +19,7 @@ from .tools.images import (
     PollinationsImageProvider,
 )
 from .tools.llm import MockProvider, OpenAICompatProvider
+from .tools.video import MockVideoProvider, PollinationsVideoProvider
 
 
 def _build_provider(name: str):
@@ -59,6 +60,21 @@ def _build_image_provider(name: str):
     raise SystemExit(f"provider d'images inconnu: {name}")
 
 
+def _build_video_provider(name: str):
+    import os
+
+    if name == "mock":
+        return MockVideoProvider(cost_per_second=float(os.environ.get("STUDIO_VIDEO_COST", "0")))
+    if name == "pollinations":
+        return PollinationsVideoProvider(
+            model=os.environ.get("STUDIO_VIDEO_MODEL", "wan-fast"),
+            width=int(os.environ.get("STUDIO_VIDEO_WIDTH", "512")),
+            height=int(os.environ.get("STUDIO_VIDEO_HEIGHT", "512")),
+            cost_per_second=float(os.environ.get("STUDIO_VIDEO_COST", "0.01")),
+        )
+    raise SystemExit(f"provider de videos inconnu: {name}")
+
+
 def cmd_validate(args) -> int:
     try:
         registry = load_registry(args.root, extra_skill_roots=args.skills_root)
@@ -92,6 +108,7 @@ def cmd_run(args) -> int:
         journal=Journal(Path(args.runs) / "journal.jsonl"),
         answers=answers,
         image=_build_image_provider(args.image_provider or args.provider),
+        video=_build_video_provider(args.video_provider or "mock"),
     )
     try:
         result = asyncio.run(executor.run(args.workflow, inputs))
@@ -155,6 +172,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--answer", action="append", default=[])
     run.add_argument("--provider", default="mock", choices=["mock", "openai"])
     run.add_argument("--image-provider", default=None, choices=["mock", "openai", "pollinations"])
+    run.add_argument("--video-provider", default=None, choices=["mock", "pollinations"])
     run.set_defaults(func=cmd_run)
 
     journal = sub.add_parser("journal", help="affiche le journal")

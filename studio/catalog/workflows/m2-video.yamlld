@@ -1,0 +1,37 @@
+"@context": "studio:context"
+"@id": "studio:workflow/m2-video"
+type: studio:Workflow
+name: Montage M2 avec videos generees
+description: Palier M2 - des fiches de plans (image + mouvement) a un montage de vraies videos.
+version: 1
+inputs:
+  plans:
+    type: list
+    required: true
+nodes:
+  - id: gate_storyboard
+    type: studio:HumanGate
+    question: Les fiches de plans (duree, mouvement) sont-elles bonnes avant de generer les videos ?
+    options: [continue, retry, stop]
+  - id: clips
+    agent: studio:agent/video-maker
+    foreach: "${plans}"
+    parallel: 1
+    on_item_failure: continue
+    needs: [gate_storyboard]
+  - id: gate_videos
+    type: studio:HumanGate
+    needs: [clips]
+    question: Les videos generees tiennent-elles le plan ?
+    options: [continue, retry, stop]
+  - id: board
+    agent: studio:agent/mounter
+    needs: [clips, gate_videos]
+  - id: gate_montage
+    type: studio:HumanGate
+    needs: [board]
+    question: Le montage est-il conforme au decoupage ?
+    options: [continue, retry, stop]
+  - id: probe
+    agent: studio:agent/prober
+    needs: [board, gate_montage]

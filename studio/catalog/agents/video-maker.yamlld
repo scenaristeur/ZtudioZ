@@ -1,0 +1,20 @@
+"@context": "studio:context"
+"@id": "studio:agent/video-maker"
+type: studio:VideoAgent
+name: Fabricant de videos
+description: Anime l'image d'un plan selon le mouvement valide par l'humain (image vers video).
+version: 1
+model: wan-fast
+prompt: |
+  Tu animes une image de plan. Tu respectes l'image de reference : meme decor,
+  meme lumiere, meme palette, meme personnage.
+  Le mouvement est celui decrit par la fiche du plan : tu ne l'inventes pas.
+  Aucun texte, aucun sous-titre, aucune coupe, aucun raccord.
+inputs:
+  item:
+    type: object
+    required: true
+outputs:
+  clip:
+    type: object
+budget: 0.50
