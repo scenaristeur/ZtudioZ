@@ -731,12 +731,12 @@ def _guidance(
         suggestion = _suggest_feedback(verdict)
         return [
             f"correction proposee: {suggestion}",
-            f"prochaine action: {retry} \"<correction ci-dessus>\"",
+            f"prochaine action: {retry} --feedback \"<correction ci-dessus>\"",
             f"ou accepter:     {accept}",
         ]
     return [
         f"prochaine action: {accept}",
-        f"ou corriger:     {retry} \"<correction>\"",
+        f"ou corriger:     {retry} --feedback \"<correction>\"",
     ]
 
 

@@ -144,6 +144,21 @@ def test_le_verdict_par_plan_est_produit_et_resume(tmp_path):
     assert sent["shots"] == SHOTS["shots"]
 
 
+def test_la_guidance_globale_utilise_le_flag_feedback(tmp_path):
+    project = SimpleNamespace(root=tmp_path / "demo")
+
+    lines = cli._guidance(
+        project,
+        "run1",
+        "gate_verdict",
+        {"ok": False, "notes": "L'image 1 manque de convoi.", "violated": [], "shots": []},
+    )
+    joined = "\n".join(lines)
+
+    assert "retry --feedback" in joined
+    assert "retry \"<correction" not in joined
+
+
 def test_la_guidance_propose_une_correction_ciblee_par_plan(tmp_path):
     project = SimpleNamespace(root=tmp_path / "demo")
     verdict = {

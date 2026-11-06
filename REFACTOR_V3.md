@@ -9,7 +9,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 269 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 270 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -715,14 +715,14 @@ Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `gemma-4-31b-it` d�
 avec `constraints: [{text: "pas de dialogue", respected: true, evidence: "aucune bulle..."}]`.
 Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 
-Tests ajoutés pour le verdict plan par plan (M4) — **+10 tests, 269 verts** :
+Tests ajoutés pour le verdict plan par plan (M4) — **+11 tests, 270 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
 | `test_verdict_shots.py` (contrat) | 3 | le prompt `continuity-checker` v10 exige un jugement par plan (`index`, `ok`, `notes`, `issues`), le schéma accepte un verdict par plan, et refuse `ok=true` dès qu'un plan est fautif |
 | `test_verdict_shots.py` (schéma) | 1 | un `index` négatif ou un champ inconnu est refusé |
 | `test_verdict_shots.py` (moteur) | 1 | M1 produit le verdict par plan, l'index et les écarts remontent dans le résumé CLI, et les plans arrivent au contrôleur |
-| `test_verdict_shots.py` (guidance) | 1 | le CLI propose `--feedback-item gate_verdict#<index>=...` uniquement pour les plans fautifs |
+| `test_verdict_shots.py` (guidance) | 2 | le CLI propose `--feedback-item gate_verdict#<index>=...` uniquement pour les plans fautifs ; sans verdict par plan, la correction globale utilise bien `--feedback` (et non un argument positionnel invalide) |
 | `test_api_feedback.py` | 4 | `feedback_items` accepté seul (clés converties en entiers), refusé mélangé à `feedback`, index non entier/négatif ou texte vide → 400 ; un retry ciblé rejoue les plans visés et journalise `gate_retry.feedback = {"1": ...}` |
 
 L'UI applique la même règle : à `gate_verdict`, chaque plan fautif reçoit sa propre zone de
@@ -901,7 +901,7 @@ condition de :
 | 2026-11-05 | D26 | **Freeform vérifiable.** Le verdict porte `constraints` (`text`, `respected`, `evidence`) ; le schéma interdit `ok=true` si une contrainte est `respected=false`. Prompt v6 exige une entrée par contrainte freeform. 4 tests. **Vérifié en réel** : Albert rend `ok=false` argumenté et `{"text":"pas de dialogue","respected":true,"evidence":"aucune bulle..."}` | assistant |
 | 2026-11-06 | autonomie | **Le studio v3 devient autonome.** Le pont lecture seule vers les projets externes est retiré ; plus aucun test, skill, agent ou code ne lit un dossier ou un environnement du projet d'origine. Les acquis utiles (bible, références, keyframes) restent, réécrits et testés dans `studio/`. D22 clos comme hors périmètre. La source v1 reste citée dans ce document comme **référence documentaire** tant que la refonte n'est pas terminée (D31) | humain + assistant |
 | 2026-11-06 | M4 | **Verdict plan par plan.** `continuity-checker` v10 rend un jugement par image de plan (`index` 0-based, `ok`, `notes`, `issues`) en le comparant au plan et aux planches de la bible. Le schéma interdit `ok=true` dès qu'un plan est fautif. Le CLI affiche les plans et propose une correction ciblée. 6 tests | assistant |
-| 2026-11-06 | API/UI | **Retry ciblé de bout en bout.** L'API accepte `feedback_items: {index: texte}` (jamais mélangé à `feedback`), le journal conserve `gate_retry.feedback`, et l'UI propose une zone par plan fautif plus une correction globale. 4 tests API, build Vite reconstruit. **269 verts**, `validate` OK | assistant |
+| 2026-11-06 | API/UI | **Retry ciblé de bout en bout.** L'API accepte `feedback_items: {index: texte}` (jamais mélangé à `feedback`), le journal conserve `gate_retry.feedback`, et l'UI propose une zone par plan fautif plus une correction globale. 4 tests API, build Vite reconstruit. **270 verts**, `validate` OK | assistant |
 
 ---
 
