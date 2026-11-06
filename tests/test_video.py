@@ -56,13 +56,14 @@ def make_executor(tmp_path, video, *, image=None):
     )
 
 
-def run_video(tmp_path, fiches, video, answers=None, image=None):
+def run_video(tmp_path, fiches, video, answers=None, image=None, feedback=None):
     executor = make_executor(tmp_path, video, image=image)
     result = asyncio.run(
         executor.run(
             "studio:workflow/m2-video",
             {"plans": fiches},
             answers={"gate_storyboard": "continue", "gate_videos": "continue", "gate_montage": "continue"} if answers is None else answers,
+            feedback=feedback,
         )
     )
     return result, executor
@@ -152,6 +153,53 @@ def test_les_keyframes_arrivent_dans_l_ordre_debut_fin(tmp_path):
     assert result.status == "completed", result.error
     assert video.records[0]["references"] == [start, end]
     assert video.records[0]["reference"] == start
+
+
+def test_un_retry_sans_feedback_ne_rejoue_que_les_items_en_echec(tmp_path):
+    """Un clip reussi ne doit pas etre repayé quand un autre clip echoue."""
+    video = MockVideoProvider(fail_on=2)
+    result, executor = run_video(
+        tmp_path,
+        [fiche(tmp_path, "a"), fiche(tmp_path, "b")],
+        video,
+        answers={"gate_storyboard": "continue", "gate_videos": "retry"},
+    )
+
+    assert result.status == "blocked"
+    assert result.pending_gate.id == "gate_videos"
+    assert video.calls == 3, "seul l'item en echec doit etre rejoue"
+    events = executor.journal.events()
+    assert len([e for e in events if e["type"] == "item_failed"]) == 1
+    assert len([e for e in events if e["type"] == "node_finished" and e["node"] == "clips"]) == 2
+
+
+def test_un_retry_avec_feedback_rejoue_tous_les_items(tmp_path):
+    """Une correction explicite s'applique a tous les clips, pas seulement au fautif."""
+    video = MockVideoProvider(fail_on=2)
+    result, _ = run_video(
+        tmp_path,
+        [fiche(tmp_path, "a"), fiche(tmp_path, "b")],
+        video,
+        answers={"gate_storyboard": "continue", "gate_videos": "retry"},
+        feedback={"gate_videos": "plus de poussiere"},
+    )
+
+    assert result.status == "blocked"
+    assert video.calls == 4, "avec feedback, les deux clips sont regeneres"
+
+
+def test_un_retry_sans_echec_rejoue_tous_les_items(tmp_path):
+    """Sans item fautif, retry reste une nouvelle prise de tous les plans."""
+    video = MockVideoProvider()
+    result, _ = run_video(
+        tmp_path,
+        [fiche(tmp_path, "a"), fiche(tmp_path, "b")],
+        video,
+        answers={"gate_storyboard": "continue", "gate_videos": "retry"},
+    )
+
+    assert result.status == "blocked"
+    assert video.calls == 4
 
 
 def test_la_video_recoit_le_mouvement_et_l_image_de_reference(tmp_path):

@@ -230,6 +230,8 @@ Attention : le verdict du `continuity-checker` voit désormais **les pixels** (A
 `gemma-4-31b-it`) et juge chaque contrainte `freeform` (`respected`/`evidence`). Il reste un
 avis : c'est l'humain qui tranche à `gate_verdict`. Si le verdict n'est pas convaincant,
 `retry` + feedback sur `gate_verdict` régénère les images **et** rejoue le contrôleur.
+Sans feedback, un `retry` de foreach ne rejoue que les items en échec : les items déjà
+réussis restent en cache et ne sont pas repayés. Avec feedback, tout le fan-out est rejoué.
 
 ### M2 — plans -> vidéos -> gate -> montage -> gate -> ffprobe
 

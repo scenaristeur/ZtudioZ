@@ -251,6 +251,29 @@ class Executor:
         )
         return "stopped" if answer == "stop" else "continue"
 
+    def _unit_outcomes(self, run_id: str, dep: str) -> dict[int, str]:
+        """Dernier etat connu de chaque unite `dep#i` d'un foreach, lu au journal."""
+        outcomes: dict[int, str] = {}
+        prefix = f"{dep}#"
+        for event in self.journal.events():
+            if event.get("run") != run_id:
+                continue
+            node = str(event.get("node", ""))
+            if not node.startswith(prefix):
+                continue
+            try:
+                index = int(node[len(prefix):])
+            except ValueError:
+                continue
+            kind = event.get("type")
+            if kind in ("node_finished", "node_skipped"):
+                outcomes[index] = "ok"
+            elif kind == "item_failed":
+                outcomes[index] = "failed"
+            elif kind == "node_started" and outcomes.get(index) != "ok":
+                outcomes[index] = "running"
+        return outcomes
+
     async def _retry_gate(
         self,
         gate: Node,
@@ -260,17 +283,44 @@ class Executor:
         completed: set[str],
         run_id: str,
     ) -> None:
-        """D8 : retry = purge de l'artefact consomme et de son aval, puis rejoue l'amont."""
+        """D8 : retry = purge de l'artefact consomme et de son aval, puis rejoue l'amont.
+
+        Un foreach ne rejoue que les items en echec quand la correction ne porte
+        pas de feedback : les items reussis restent en cache et ne sont pas
+        repayes. Avec un feedback explicite, la correction s'applique a tous les
+        items, donc tout le fan-out est rejoue.
+        """
         targets: set[str] = set()
+        feedback = bool(self._active_feedback)
         for dep in gate.needs:
             hash_ = self._artifacts.get(dep)
             if hash_:
                 targets |= self.store.invalidate(hash_)
-            # Un foreach produit des unites `dep#i` : leurs caches doivent tomber
-            # aussi, sinon le noeud agrege se rejoue mais chaque item est un cache hit.
-            for unit, unit_hash in list(self._artifacts.items()):
-                if unit.startswith(f"{dep}#"):
-                    targets |= self.store.invalidate(unit_hash)
+            node = graph.nodes.get(dep)
+            if node is None or not node.foreach:
+                continue
+            outcomes = self._unit_outcomes(run_id, dep)
+            failed = {index for index, status in outcomes.items() if status != "ok"}
+            for unit in self._artifacts:
+                if not unit.startswith(f"{dep}#"):
+                    continue
+                try:
+                    index = int(unit.split("#", 1)[1])
+                except ValueError:
+                    continue
+                if index not in outcomes:
+                    failed.add(index)
+            # Sans echec a corriger, retry reste une nouvelle prise de tous les plans.
+            replay_all = feedback or not failed
+            failed_units = {f"{dep}#{index}" for index in failed}
+            units = [
+                unit
+                for unit in self._artifacts
+                if unit.startswith(f"{dep}#")
+                and (replay_all or unit in failed_units)
+            ]
+            for unit in units:
+                targets |= self.store.invalidate(self._artifacts[unit])
         affected = [
             nid
             for nid, hash_ in self._artifacts.items()
