@@ -335,9 +335,19 @@ class PollinationsImageProvider:
                 "response_format": "b64_json",
                 "size": f"{self.width}x{self.height}",
             }
-            data = await asyncio.to_thread(
-                _http_post_json, f"{self.ref_base}/v1/images/generations", payload, api_key or None
-            )
+            try:
+                data = await asyncio.to_thread(
+                    _http_post_json,
+                    f"{self.ref_base}/v1/images/generations",
+                    payload,
+                    api_key or None,
+                )
+            except Exception as exc:
+                detail = _http_error_detail(exc)
+                message = f"pollinations multiref: echec ({exc})"
+                if detail:
+                    message += f": {detail}"
+                raise RuntimeError(message) from exc
             try:
                 raw = base64.b64decode(data["data"][0]["b64_json"])
             except (KeyError, IndexError, TypeError) as exc:
@@ -348,6 +358,7 @@ class PollinationsImageProvider:
         import urllib.error
 
         last_exc: OSError | None = None
+        detail = ""
         for attempt in range(self.max_retries + 1):
             delay: float | None = None
             try:
@@ -355,6 +366,7 @@ class PollinationsImageProvider:
                 return Binary(data, _detect_media_type(data, content_type))
             except urllib.error.HTTPError as exc:
                 last_exc = exc
+                detail = _http_error_detail(exc)
                 delay = _rate_limit_delay(exc)
                 if delay is None and exc.code in (429, 500, 502, 503, 504):
                     delay = 5.0 * (2**attempt)  # incident passager sans delai annonce
@@ -365,7 +377,36 @@ class PollinationsImageProvider:
                 await asyncio.to_thread(_sleep, delay)
                 continue
             break
-        raise RuntimeError(f"pollinations: echec ({last_exc})") from last_exc
+        message = f"pollinations: echec ({last_exc})"
+        if detail:
+            message += f": {detail}"
+        raise RuntimeError(message) from last_exc
+
+
+def _http_error_body(exc: BaseException) -> bytes:
+    """Lit le corps d'une erreur HTTP une seule fois (le flux n'est pas rejouable)."""
+    cached = getattr(exc, "_studio_body", None)
+    if cached is not None:
+        return cached
+    read = getattr(exc, "read", None)
+    if not callable(read):
+        return b""
+    try:
+        raw = read()
+    except Exception:
+        return b""
+    body = raw.encode("utf-8", "replace") if isinstance(raw, str) else raw
+    try:
+        setattr(exc, "_studio_body", body)
+    except Exception:
+        pass
+    return body
+
+
+def _http_error_detail(exc: BaseException) -> str:
+    """Corps d'une erreur HTTP, borne : l'API dit souvent pourquoi (400, 403...)."""
+    text = _http_error_body(exc).decode("utf-8", "replace")
+    return " ".join(text.split())[:500]
 
 
 def _media_suffix(media_type: str) -> str:
@@ -421,7 +462,7 @@ def _rate_limit_delay(exc) -> float | None:
     if getattr(exc, "code", 0) not in (402, 429, 500, 502, 503, 504):
         return None
     try:
-        payload = json.loads(exc.read().decode("utf-8", "replace"))
+        payload = json.loads(_http_error_body(exc).decode("utf-8", "replace"))
     except Exception:
         return None
     error = payload.get("error") or {}

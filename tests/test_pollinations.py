@@ -146,6 +146,20 @@ def test_http_failure_is_a_clear_error(monkeypatch):
         run(PollinationsImageProvider())
 
 
+def test_http_400_expose_le_message_de_lapi(monkeypatch):
+    import io
+    import urllib.error
+
+    def refused(url, token=None, timeout=120.0):
+        body = io.BytesIO(b'{"error":{"message":"prompt refuse par le modele"}}')
+        raise urllib.error.HTTPError(url, 400, "Bad Request", {}, body)
+
+    monkeypatch.setattr(images, "_http_get", refused)
+
+    with pytest.raises(RuntimeError, match="prompt refuse par le modele"):
+        run(PollinationsImageProvider())
+
+
 def test_free_limit_402_waits_then_retries(monkeypatch):
     import io
     import urllib.error

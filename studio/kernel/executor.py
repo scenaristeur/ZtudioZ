@@ -91,6 +91,9 @@ class Executor:
         self._global = asyncio.Semaphore(max_parallel)
         self._artifacts: dict[str, str] = {}
         self._unit_costs: dict[str, float] = {}
+        # Retry cible : unites non visees -> artefact de la version precedente,
+        # reutilise tel quel meme si leur cle de cache a change (feedback).
+        self._keep_units: dict[str, str] = {}
         self._tools = ToolContext(
             store=store,
             registry=registry,
@@ -109,6 +112,7 @@ class Executor:
         """Execute ou reprend un workflow jusqu'a completion, gate ou echec."""
         self.feedback = dict(feedback or {})
         self._active_feedback = None
+        self._keep_units = {}
         inputs = {**self.context, **dict(inputs or {})}
         workflow = self.registry.workflow(workflow_id)
         graph = self.registry.graph(workflow_id)
@@ -163,6 +167,7 @@ class Executor:
                             await self._retry_gate(gate, graph, inputs, values, completed, run_id)
                         finally:
                             self._active_feedback = None
+                            self._keep_units = {}
                         self.journal.append("run_finished", run=run_id, status="blocked")
                         result = self._result("blocked", run_id, graph, values, completed)
                         result.pending_gate = GateRequest(gate.id, gate.question or "", gate.options)
@@ -336,8 +341,7 @@ class Executor:
             else:
                 replay_all = not failed
                 replay_indices = set()
-            units: list[str] = []
-            for unit in self._artifacts:
+            for unit, artifact in list(self._artifacts.items()):
                 if not unit.startswith(f"{dep}#"):
                     continue
                 try:
@@ -345,9 +349,9 @@ class Executor:
                 except ValueError:
                     continue
                 if replay_all or index in replay_indices:
-                    units.append(unit)
-            for unit in units:
-                targets |= self.store.invalidate(self._artifacts[unit])
+                    targets |= self.store.invalidate(artifact)
+                else:
+                    self._keep_units[unit] = artifact
         affected = [
             nid
             for nid, hash_ in self._artifacts.items()
@@ -398,12 +402,25 @@ class Executor:
             semaphore = asyncio.Semaphore(node.parallel or self.max_parallel)
 
             async def one(index: int, item: Any) -> Any:
+                unit = f"{node.id}#{index}"
+                kept = self._keep_units.get(unit)
+                if kept is not None:
+                    self._unit_costs[unit] = 0.0
+                    self.journal.append(
+                        "node_skipped",
+                        run=run_id,
+                        node=unit,
+                        artifact=kept,
+                        reason="retry",
+                        cost=0.0,
+                    )
+                    return self.store.get(kept)
                 async with semaphore:
                     extra = {"item": item, "index": index}
                     if node.alias:
                         extra[node.alias] = item
                     scope = self._scope(node, inputs, values, extra)
-                    return await self._exec_agent(node, agent, scope, run_id, f"{node.id}#{index}")
+                    return await self._exec_agent(node, agent, scope, run_id, unit)
 
             tasks = [one(i, item) for i, item in enumerate(items)]
             if node.on_item_failure == "continue":
