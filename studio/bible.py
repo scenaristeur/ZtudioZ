@@ -1,7 +1,7 @@
 """Bible de production : entites, versions actives et planches de reference.
 
-Compatible avec l'arborescence v1 (`bible/<type>/<slug>/fiche.yaml` et
-`sheet_<version>.png`). Le noyau v3 ne fait que lire : la creation/edition des
+Arborescence d'un projet : `bible/<type>/<slug>/fiche.yaml` et
+`sheet_<version>.png`. Le noyau ne fait que lire : la creation/edition des
 fiches reste une decision humaine.
 """
 

@@ -1,8 +1,8 @@
 """Le skill opérateur ne doit pas dériver du moteur.
 
-C'est la maladie exacte de la v1 : trois descriptions du même processus qui ne se
-recoupent plus. Ici, une seule garantie simple dans les deux sens — ce que le manuel
-documente existe, et ce que le moteur rend exécutable est documenté.
+Trois descriptions du même processus qui divergent est exactement ce qu'on veut éviter.
+Ici, une seule garantie simple dans les deux sens — ce que le manuel documente existe,
+et ce que le moteur rend exécutable est documenté.
 """
 
 import re

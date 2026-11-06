@@ -1,12 +1,13 @@
 # REFACTOR_V3 — ZtudioZ Studio (runtime d'agents déclaratif)
 
-> **Ce fichier est la version de travail.** L'original, figé au moment de la décision, reste
-> consultable dans le dépôt principal : `/home/smag/dev/ZtudioZ/REFACTOR_V3.md` (branche
-> `main`). C'est ici que l'on met à jour l'avancement, les décisions et la dette technique.
+> **Ce fichier est la version de travail, autosuffisante.** Le studio v3 est **autonome** :
+> il ne lit, ne copie et ne requiert aucun dossier du projet d'origine. Tout son état vit
+> dans `studio/`, `tests/` et `runs/`. C'est ici que l'on met à jour l'avancement, les
+> décisions et la dette technique.
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 260 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 259 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -15,10 +16,12 @@
 > UI Vue 3 pilotée par le graphe affiche l'état du run et répond aux gates. **D29, D23 et
 > D26 sont clos** : nœuds stricts, contrôleur multimodal Albert (`gemma-4-31b-it`), contraintes
 > freeform jugées et cohérence `ok`/`constraints` verrouillée par schéma.
-> **Décideur** : l'humain (super-décideur, cf. `AGENTS.md`).
+> **Décideur** : l'humain (super-décideur).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
-> **Base de code v1** : `main` @ `4311be5` — gelée, intouchable, sert de référence.
+> **Autonomie** (2026-11-06) : aucun chemin, fichier ou environnement du projet d'origine
+> n'est requis à l'exécution. Les sections d'audit ci-dessous sont **historiques** et ne
+> décrivent plus une dépendance.
 > **Périmètre** : constat, diagnostic, architecture, plan par paliers, reprise, dette connue.
 
 ---
@@ -36,6 +39,7 @@ quelques images. Quatre arbitrages ont été tranchés :
 | 2 | Base du moteur | **Noyau asyncio maison** (~800 lignes) | Contrôle total du DAG, du cache, des gates et du budget ; zéro lock-in |
 | 3 | Premier palier | **M0 conversation seule** | Valide tout le noyau à coût zéro, avant tout appel média |
 | 4 | Rigueur du format | **YAML-LD validé** (`@context` obligatoire) | Documents requêtables et typés, dérive détectée au chargement |
+| 5 | Autonomie (2026-11-06) | **v3 autonome** : aucune lecture, copie ou dépendance au projet d'origine | Un seul dépôt fait foi ; `runs/` est la seule source d'état, les acquis sont réécrits et testés ici |
 
 Précision apportée ensuite par l'utilisateur : `pipeline/`, `api/` et `web/` seront
 **entièrement revus au palier M3**, pas adaptés à la marge. Ils restent donc hors périmètre
@@ -46,7 +50,10 @@ dépôt**. Il reste disponible comme réservoir d'outils, il n'est pas la base d
 
 ---
 
-## 2. Constat de l'existant (audit du 2026-10-31)
+## 2. Constat historique (audit du 2026-10-31)
+
+> **Lecture seule, aucune dépendance.** Cette section conserve le diagnostic qui a motivé la
+> refonte. Le studio v3 ne lit ni ne réutilise ce code : il est autonome.
 
 Audit **read-only** : aucune écriture, aucun commit n'en a résulté. Vérifications exécutées :
 `test_doc_drift.py` ✅, `test_system.py` ✅, `list_projects` ❌, `get_status` par projet.
@@ -167,7 +174,7 @@ studio/
   web/             UI Vue 3 + Vite pilotee par le graphe (dist servi par l'API)
   cli.py           run | journal | validate | invalidate | serve | --skills-root | --project
   project.py       studio.yaml -> providers + contexte + racine artefacts/journal
-tests/             45 fichiers, 260 tests
+tests/             45 fichiers, 259 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -259,7 +266,8 @@ Réalité M2 : le dispatch tourne pour `python` et `cli`.
 - **cli** : `command: [argv…]`, substitution `${param}` dans les arguments, stdout capturé →
   `{"stdout", "exit"}` ; un code retour non nul est un échec d'outil net, journalisé.
 - **mcp** : client stdio branché (post-M2) sur la table `servers:` du registre, avec
-  mapping `arguments:` ; le toolkit v1 reste à exposer (dette D22, M3).
+  mapping `arguments:`. Le toolkit historique n'est **pas** exposé : la v3 est autonome
+  (D22 clos comme hors périmètre).
 
 Un `ToolAgent` déclare **exactement un outil** ; son coût (`cost:` de l'entrée de registre)
 est estimé avant exécution, refusé avant appel si hors budget. La règle d'enveloppe : si la
@@ -350,8 +358,8 @@ args + env) et un mapping `arguments:` traduit les entrées du nœud en argument
 (`text: "${message}"`). Les résultats texte sont rendus `{"text": ...}`, ceux qui sont du
 JSON sont parsés. Testé contre un serveur jouet (`mcp` 2.x, extra optionnel du pyproject).
 
-Reste à faire : brancher le **toolkit v1** (`ztudioz_toolkit`, ~25 outils, serveur camel) —
-c'est de l'exposition, pas du mécanisme (dette D22). `vision.describe` reste une déclaration
+Le **toolkit historique** (`ztudioz_toolkit`, ~25 outils, serveur camel) n'est **pas**
+branché : hors périmètre, la v3 est autonome (D22). `vision.describe` reste une déclaration
 dont le serveur n'existe pas encore sur cette branche.
 
 ### 6.7 Artefacts
@@ -464,7 +472,7 @@ depuis le web. Le travail est découpé en tranches démontrables, chacune TDD :
 | 3 | **Enchaînement des paliers** : M0 → M1 → M2 depuis la CLI, gates humaines inchangées — **fait** | un projet avance jusqu'au montage, reprise après `Ctrl-C` comprise | D10 |
 | 4 | **API** : projets, runs, journal, artefacts, réponse aux gates — **fait** | le journal d'un run est lisible en HTTP, une gate se répond sans CLI | D11, D16 |
 | 5 | **Web** : UI pilotée par le graphe, plus de vues par étape — **fait** | une gate se voit et se répond dans le navigateur | D22 |
-| 6 | **Clôture M3** : coûts réels, toolkit v1 exposé, replay | un run réel se pilote de bout en bout depuis le web | D11, D22, D30 |
+| 6 | **Clôture M3** : coûts réels, autonomie complète, replay | un run réel se pilote de bout en bout depuis le web | D11, D30 |
 
 Le stockage public de la vidéo reste `tmpfiles.org` : décision humaine du 2026-11-05,
 consignée en D30. Un stockage maîtrisé est repoussé à M4.
@@ -729,45 +737,35 @@ Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 
 | Élément | Emplacement |
 |---|---|
-| **Ce document (version de travail)** | `/home/smag/dev/ZtudioZ-v3/REFACTOR_V3.md`, branche `studio-v3` |
-| Version historique figée à la décision | `/home/smag/dev/ZtudioZ/REFACTOR_V3.md`, branche `main` |
-| Code v3 | `/home/smag/dev/ZtudioZ-v3/studio/` + `tests/` |
-| Référence v1 (gelée) | `/home/smag/dev/ZtudioZ`, branche `main` @ `4311be5` |
-| Projets de production | `/home/smag/dev/ZtudioZ/projets/` — **jamais** dans le worktree |
-| Environnement v3 | `/home/smag/dev/ZtudioZ-v3/.venv` (isolé : PyYAML, jsonschema, pyld, pytest) |
+| **Ce document (version de travail)** | `REFACTOR_V3.md`, branche `studio-v3` |
+| Code v3 | `studio/` + `tests/` |
+| Projets et leurs états | `runs/<slug>/` (config, journal, artefacts) |
+| Environnement v3 | `.venv/` (isolé : PyYAML, jsonschema, pyld, pytest) |
+| Secrets | `.env` à la racine du dépôt, **jamais commité** |
 
-### 10.2 Procédure de création — **déjà exécutée**
+### 10.2 Autonomie
 
-```bash
-git worktree add --detach /home/smag/dev/ZtudioZ-v3 main
-cd /home/smag/dev/ZtudioZ-v3
-git checkout --orphan studio-v3
-git rm -rf .                        # supprime les fichiers DANS le worktree uniquement
-git commit --allow-empty -m "chore: branche orpheline studio v3"
-python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
-```
-
-`git rm -rf .` n'affecte que le worktree : `main` et `projets/` restent intacts, et
-`projets*` est gitignoré donc jamais copié.
+La branche `studio-v3` est **orpheline** : elle ne partage ni historique ni fichiers avec un
+autre dépôt. Toute la configuration, les skills, les workflows et les projets vivent dans ce
+worktree. Aucun chemin extérieur n'est requis pour valider, lancer ou reprendre un run.
 
 ### 10.3 Reprendre dans une nouvelle session
 
 1. Lire ce document **en entier** (il est dans la branche, à côté du code).
-2. Lire `AGENTS.md` (rôle production) et `AGENTS_CODE.md` (règles de code) dans
-   `/home/smag/dev/ZtudioZ`.
+2. Lire les règles de code de la section 8 (test rouge d'abord, contrats, style).
 3. Vérifier l'état :
 
 ```bash
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 260 passed
+.venv/bin/python -m pytest tests/      # 259 passed
 .venv/bin/python -m studio.cli validate
 ```
 
 4. Identifier le palier en cours via la section 7 (colonne **État**) et le journal (section 11).
 5. Continuer **par un test rouge**, jamais par du code.
-6. Ne jamais toucher à `/home/smag/dev/ZtudioZ/projets/`.
+6. Ne jamais lire ni écrire hors du worktree : `runs/` est la seule source d'état.
 
 ### 10.4 Déléguer
 
@@ -777,7 +775,7 @@ condition de :
 
 - ne pas franchir le portier code sans accord humain ;
 - livrer **tests d'abord**, puis implémentation, puis démo ;
-- ne rien écrire dans `projets/` ni dans `main` ;
+- ne rien écrire hors du worktree ;
 - mettre à jour la section 7 (colonne **État**), la section 12 (dette) et la section 11
   (journal) à la fin de son palier — l'écart entre le plan et le code est le vrai risque.
 
@@ -858,6 +856,7 @@ condition de :
 | 2026-11-06 | références | **Intégration v1 : images de référence** : le provider Pollinations accepte `references` (liste), utilise `gen.pollinations.ai` + `gptimage` pour une référence (`image=URL`) et le POST `/v1/images/generations` pour le multi-ref. `strict_refs` empêche de perdre silencieusement l'ancre. L'exécuteur collecte toutes les images référencées. `madmax-2208` passe à `ref_model: gptimage` ; verdict réel : image 2 corrigée, image 1 encore à reprendre | assistant |
 | 2026-11-05 | opencode | **Pilotage depuis opencode** : agent `studio-operator` + commandes `/studio-status`, `/studio-next`, `/studio-run`, `/studio-answer`, `/studio-journal`, `/studio-validate`. Nouvelle commande CLI `answer <run_id> <gate> <choix>` qui relit workflow et entrées du journal (pas besoin de reconstruire `--input`). 2 tests, **217 verts** | assistant |
 | 2026-11-05 | D26 | **Freeform vérifiable.** Le verdict porte `constraints` (`text`, `respected`, `evidence`) ; le schéma interdit `ok=true` si une contrainte est `respected=false`. Prompt v6 exige une entrée par contrainte freeform. 4 tests. **Vérifié en réel** : Albert rend `ok=false` argumenté et `{"text":"pas de dialogue","respected":true,"evidence":"aucune bulle..."}` | assistant |
+| 2026-11-06 | autonomie | **Le studio v3 devient autonome.** Le pont lecture seule vers les projets externes est retiré ; plus aucun test, skill, agent ou document de travail ne pointe vers un dossier ou un environnement du projet d'origine. Les acquis utiles (bible, références, keyframes) restent, réécrits et testés dans `studio/`. D22 clos comme hors périmètre | humain + assistant |
 
 ---
 
@@ -867,8 +866,9 @@ Liste volontairement exhaustive : c'est le carnet de charges du palier suivant, 
 empêche de croire que le noyau est fini. Clos : D1–D3 (M1), D4–D9, D13, D17, D18 (M2),
 D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp), D23 (vision
 réelle), D24 (contraintes transportées et bornées), D26 (freeform vérifiable), D27 (schéma
-des plans), D28 (contexte du verdict), D29 (nœuds stricts et ancre préservée).
-Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D30.
+des plans), D28 (contexte du verdict), D29 (nœuds stricts et ancre préservée), D22 (hors
+périmètre : v3 autonome).
+Restent ouverts : D10, D11, D12, D16, D20, D21, D30.
 
 | # | Écart | Où le voir | À traiter |
 |---|---|---|---|
@@ -893,7 +893,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D30.
 | ~~D19~~ | ~~Dispatch `kind: mcp` refusé~~ | **clos** : client stdio + table `servers:` + mapping `arguments:` ; testé contre serveur jouet mcp 2.x | — |
 | D20 | **Un seul outil par `ToolAgent`** : la convention « exactement un outil déclaré » évite le routage multi-outils ; un agent qui compose deux outils n'existe pas | `executor._exec_tool` | M3 si le besoin apparaît |
 | D21 | **Déterminisme des media réels** : les clips synthétiques sont `bitexact` (retry = déduplication parfaite), un mp4/JPEG réel ne l'est pas — la déduplication par contenu n'y suffira pas | `tools/media.py`, `tools/images.py` | M4 |
-| D22 | **Le toolkit v1 (~25 outils MCP) n'est pas exposé** : le mécanisme marche, il manque le serveur (camel, context `projets/`) et ses fiches d'outils dans le registre | `pipeline/ztudioz_toolkit.py` v1, `tools.yamlld` | M3 — exposition, pas duplication |
+| ~~D22~~ | ~~Le toolkit historique (~25 outils MCP) n'est pas exposé~~ | **clos comme hors périmètre (2026-11-06)** : la v3 est autonome, aucun pont vers des projets externes n'est maintenu ; les outils utiles sont réécrits dans `studio/tools/` | — |
 | ~~D23~~ | ~~Le verdict vision est un proxy texte~~ | **clos en M4** : un agent qui declare `images` recoit les binaires, le provider les envoie en `image_url` (data URI) ; `continuity-checker` passe a `gemma-4-31b-it` et voit les pixels. Verifie en reel sur deux JPEG de `feu-follet-v2` | `catalog/agents/continuity-checker.yamlld`, `_exec_agent`, `tools/llm.py` | — |
 | ~~D24~~ | ~~Contraintes du brief perdues avant les plans~~ | **clos** : `constraints.max_shots` entre dans le schéma du brief, `brief` devient entrée déclarée de `m1-scene` et de `shot-list`, et `limit:` borne le `foreach` avec troncature journalisée. Garde fou : feu-follet (6 shots produits par le LLM, max 2 demandé) ne paie plus que 2 images | — |
 | ~~D25~~ | ~~Pas de contexte projet~~ | **clos en M3.2** : le projet porte un `context:` (brief, contraintes, référence), fusionné aux entrées du run ; le workflow declare ce qu'il consomme une fois (`context:`), les nœuds n'en redeclarent rien. Entrée explicite prioritaire, contexte requis absent = échec avant appel, contexte optionnel absent = pas de borne. `m1-scene` ne redéclare plus `brief` | `studio/project.py`, `graph.Graph.context`, `executor.run` | — |

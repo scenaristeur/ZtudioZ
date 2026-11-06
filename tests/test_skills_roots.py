@@ -1,15 +1,10 @@
-"""D15 — les skills v1 deviennent joignables : roots additionnels au chargement et au CLI."""
+"""D15 — des packs de skills externes deviennent joignables : roots additionnels au chargement et au CLI."""
 
 import subprocess
 import sys
-from pathlib import Path
-
-import pytest
 
 from studio.kernel.registry import STUDIO_ROOT, load_registry
 from tests.helpers import ECHO_TOOLS, catalog
-
-V1_SKILLS = Path("/home/smag/dev/ZtudioZ/.opencode/skills")
 
 
 def pack_dir(root):
@@ -42,15 +37,6 @@ skills: [consistency-rules]
     registry = load_registry(root, extra_skill_roots=[pack_dir(tmp_path / "externes")])
 
     assert "Ne jamais changer" in registry.skill("consistency-rules")
-
-
-@pytest.mark.skipif(not V1_SKILLS.exists(), reason="dépôt v1 absent de cette machine")
-def test_les_11_skills_v1_sont_des_packs_valables():
-    registry = load_registry(STUDIO_ROOT, extra_skill_roots=[V1_SKILLS])
-
-    found = [name for name in registry.skills if name.startswith("ztudioz-")]
-    assert len(found) >= 11
-    assert "scenario-structure" in registry.skills  # les packs v3 restent
 
 
 def test_cli_skills_root_flag(tmp_path):

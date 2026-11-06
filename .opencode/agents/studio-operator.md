@@ -38,7 +38,10 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
   accepte le repli Pollinations (`flux` sans référence puis `gptimage`, `wan-fast` avec
   image), puis relance avec `--fallback pollinations`. Ne bascule jamais sans réponse.
 - Montre toujours le `run_id`, le statut, la gate et les chemins d'artefacts.
+- Le studio v3 est autonome : ne lire, n'écrire ni s'appuyer sur aucun dossier extérieur
+  au projet courant (`runs/<slug>`).
 - `retry` avec `--feedback` crée une nouvelle version : recopie exactement la correction humaine.
 - Si `status`/`next` disent qu'une entrée manque, demande-la à l'humain, ne l'invente pas.
-- Ne modifie pas le code du studio sans accord explicite (règles `AGENTS_CODE.md`).
+- Ne modifie pas le code du studio sans accord explicite ; toute garantie passe par un test
+  rouge d'abord (cf. `REFACTOR_V3.md` §8).
 - Charge le skill `ztudioz-studio-v3` pour les détails providers, gates et paliers.

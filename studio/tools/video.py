@@ -142,7 +142,7 @@ class PollinationsVideoProvider:
 
     Facturation a la seconde, donc `estimate` multiplie le tarif par la duree.
     L'image de reference doit etre publiquement joignable : elle est televersee
-    vers tmpfiles.org au moment de l'appel, comme le faisait la v1.
+    vers tmpfiles.org au moment de l'appel.
     """
 
     def __init__(

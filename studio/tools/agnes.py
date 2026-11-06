@@ -2,7 +2,7 @@
 
 L'image accepte une référence (image->image) ; plusieurs références passent par
 la composition apihub (`AGNES_API_KEY`). La vidéo accepte 1 image (i2v) ou 2
-images (keyframes start/end), comme le pipeline v1.
+images (keyframes début/fin).
 """
 
 from __future__ import annotations

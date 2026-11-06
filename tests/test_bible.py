@@ -1,4 +1,4 @@
-"""Bible v1 -> v3 : planches de reference utilisables par les ImageAgents."""
+"""Bible du projet : planches de reference utilisables par les ImageAgents."""
 
 import asyncio
 from pathlib import Path

@@ -6,7 +6,8 @@ description: >-
   traitement), m1-scene (plans + images + gate + verdict) et m2-video (images -> vraies
   vidéos -> montage, ffmpeg, ffprobe), gérer les gates humaines (continue/retry/stop),
   reprendre après Ctrl-C, lire le journal et les coûts, invalider une branche par lignée,
-  brancher les skills v1 et les providers réels (Albert, Pollinations). Déclencheur : studio
+  charger des packs de skills externes et brancher les providers réels (Albert,
+  Pollinations). Déclencheur : studio
   v3, nouveau projet v3, m0, m1, m2, vidéo, gate, runs, artifacts, invalidate, albert,
   pollinations.
 ---
@@ -29,7 +30,7 @@ Commandes disponibles (TUI opencode) :
 L'agent `studio-operator` (mode primary) exécute ces commandes. Il ne répond **jamais** à une
 gate sans choix explicite de l'humain.
 
-Le projet n'est pas un dossier `projets/` (v1) : **un projet = un dossier de runs**.
+Un projet n'est pas un dossier de production partagé : **un projet = un dossier de runs**.
 Tout l'état est là : `studio.yaml` (config), `journal.jsonl` (histoire append-only) et
 `artifacts/` (livrables adressés par hash de contenu, jamais écrasés).
 
@@ -80,7 +81,8 @@ traceback.
 
 ### Bible et références
 
-La bible v1 est lue telle quelle : `bible/<type>/<slug>/fiche.yaml` + `sheet_<version>.png`.
+La bible du projet est lue telle quelle depuis `<projet>/bible/` :
+`bible/<type>/<slug>/fiche.yaml` + `sheet_<version>.png`.
 `m1-scene` accepte `references: ["lieu/desert", "personnage/mael"]` ; l'agent `sheet-keeper`
 résout les planches, les stocke comme artefacts, et les ImageAgents les reçoivent avec la
 planche générée. Le contrôleur de continuité reçoit aussi ces images pour comparer les shots
@@ -125,7 +127,8 @@ journal. Elle interroge l'API toutes les 2 s. Pour développer : `npm run dev` (
 
 ## Règles permanentes
 
-- Ne jamais écrire dans `/home/smag/dev/ZtudioZ/projets/` ni modifier `main`.
+- Le studio v3 est autonome : ne jamais lire ni écrire hors du projet courant
+  (`runs/<slug>`). `runs/` est la seule source d'état.
 - Ne jamais lancer un run réel sans demande explicite de l'humain.
 - Toute modification du moteur passe par un test rouge d'abord (cf. REFACTOR_V3.md §8).
 - L'humain décide aux gates : on ne répond jamais `continue` à sa place.
@@ -134,7 +137,7 @@ journal. Elle interroge l'API toutes les 2 s. Pour développer : `npm run dev` (
 
 ```bash
 cd /home/smag/dev/ZtudioZ-v3
-set -a && . /home/smag/dev/ZtudioZ/.env && set +a   # OPENAI_* (Albert), POLLINATION_API_KEY
+set -a && . ./.env && set +a   # OPENAI_* (Albert), POLLINATION_API_KEY, AGNES_API_KEY
 export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
 ```
 - Texte : `--provider openai` (Albert etalab, modèle via `STUDIO_MODEL`, les placeholders
@@ -280,7 +283,7 @@ Puis `gate_videos` : donne les chemins `runs/<slug>/artifacts/<hash>.mp4`, l'hum
 python -m studio.cli --runs $RUNS journal              # tout l'historique horodaté
 python -m studio.cli --runs $RUNS validate             # le catalogue entier est-il sain ?
 python -m studio.cli --runs $RUNS invalidate <hash>    # purge un artefact + SON aval, rien d'autre
-python -m studio.cli --skills-root /home/smag/dev/ZtudioZ/.opencode/skills validate
+python -m studio.cli --skills-root /chemin/vers/packs validate   # packs externes optionnels
 ```
 - `Ctrl-C` en plein run (code 130) : relancer la même commande, ça reprend.
 - Les coûts : chaque run affiche « cout journalise » ; budget par agent dans
