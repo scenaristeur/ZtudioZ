@@ -508,52 +508,6 @@ def cmd_bible(args) -> int:
     return 0
 
 
-def cmd_v1(args) -> int:
-    """Inspection lecture seule des projets de la v1."""
-    import os
-
-    from .v1_bridge import (
-        V1Error,
-        list_projects,
-        project_files,
-        project_status,
-    )
-
-    root = args.projects_root or os.environ.get("STUDIO_V1_PROJECTS")
-    if not root:
-        raise StudioError(
-            "racine v1 absente: passer --projects-root ou definir STUDIO_V1_PROJECTS"
-        )
-    try:
-        if args.v1_command == "list":
-            projects = list_projects(root)
-            if not projects:
-                print("aucun projet v1")
-                return 0
-            for project in projects:
-                print(
-                    f"{project['slug']}: {project['scenes']} scenes, "
-                    f"{project['entities']} entites"
-                )
-            return 0
-        if args.v1_command == "status":
-            print(
-                json.dumps(
-                    project_status(root, args.slug),
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 0
-        if args.v1_command == "files":
-            for item in project_files(root, args.slug, args.pattern):
-                print(f"{item['path']} ({item['size']} o)")
-            return 0
-    except V1Error as exc:
-        raise StudioError(str(exc)) from exc
-    raise StudioError(f"sous-commande v1 inconnue: {args.v1_command}")
-
-
 def cmd_next(args) -> int:
     project = _load_project_or_fail(args)
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
@@ -988,21 +942,6 @@ def build_parser() -> argparse.ArgumentParser:
     bible = sub.add_parser("bible", help="liste les entites et planches de la bible")
     bible.add_argument("--type", default=None, choices=["personnage", "lieu", "objet"])
     bible.set_defaults(func=cmd_bible)
-
-    v1 = sub.add_parser("v1", help="inspecte les projets v1 en lecture seule")
-    v1_sub = v1.add_subparsers(dest="v1_command", required=True)
-    v1_list = v1_sub.add_parser("list", help="liste les projets v1")
-    v1_list.add_argument("--projects-root", default=None)
-    v1_list.set_defaults(func=cmd_v1)
-    v1_status = v1_sub.add_parser("status", help="statut d'un projet v1")
-    v1_status.add_argument("slug")
-    v1_status.add_argument("--projects-root", default=None)
-    v1_status.set_defaults(func=cmd_v1)
-    v1_files = v1_sub.add_parser("files", help="fichiers d'un projet v1")
-    v1_files.add_argument("slug")
-    v1_files.add_argument("--pattern", default="**/*")
-    v1_files.add_argument("--projects-root", default=None)
-    v1_files.set_defaults(func=cmd_v1)
 
     status = sub.add_parser("status", help="etat du dernier run et palier suivant")
     status.set_defaults(func=cmd_status)

@@ -12,15 +12,6 @@ tools:
   bible.sheets:
     kind: python
     impl: studio.tools.bible:sheets
-  v1.list_projects:
-    kind: python
-    impl: studio.tools.v1_bridge:list_projects
-  v1.project_status:
-    kind: python
-    impl: studio.tools.v1_bridge:project_status
-  v1.project_files:
-    kind: python
-    impl: studio.tools.v1_bridge:project_files
   vision.describe:
     kind: mcp
     server: character-designer
