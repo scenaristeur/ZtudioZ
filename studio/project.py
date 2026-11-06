@@ -264,6 +264,42 @@ def pending_gate(events: list[dict], run_id: str) -> dict | None:
     return gate
 
 
+def failed_gate(events: list[dict], run_id: str, gate_id: str) -> dict | None:
+    """Gate posee puis laissee en attente par un echec, jamais repondue.
+
+    Un retry peut echouer en cours de route (reseau, provider) : le run passe
+    `failed` et `pending_gate` ne le voit plus. La gate doit rester repondable
+    pour reprendre, mais une gate deja franchie ne se rouvre pas.
+    """
+    status = None
+    gate: dict | None = None
+    for event in events:
+        if event.get("run") != run_id:
+            continue
+        kind = event.get("type")
+        if kind == "gate_asked":
+            gate = {
+                "id": event.get("node"),
+                "question": event.get("question"),
+                "options": list(event.get("options") or []),
+            }
+        elif kind == "gate_answered" and gate and gate["id"] == event.get("node"):
+            gate = None
+        elif kind == "run_finished":
+            status = event.get("status")
+    if status != "failed" or gate is None:
+        return None
+    return gate if gate["id"] == gate_id else None
+
+
+def answerable_gate(events: list[dict], run_id: str, gate_id: str) -> dict | None:
+    """Gate que `answer` peut reprendre : en attente, ou laissee par un echec."""
+    gate = pending_gate(events, run_id)
+    if gate is not None:
+        return gate if gate["id"] == gate_id else None
+    return failed_gate(events, run_id, gate_id)
+
+
 NEXT_WORKFLOWS = {
     "workflow/m0-conversation": "studio:workflow/m1-scene",
     "workflow/m1-scene": "studio:workflow/m2-video",

@@ -81,17 +81,29 @@ def test_seed_is_deterministic_per_prompt(recorder):
     assert seed1 != seed_b
 
 
-def test_une_reference_utilise_gen_et_le_modele_image(monkeypatch, recorder):
+def test_une_reference_passe_par_le_post_json(monkeypatch):
+    import base64
+
+    calls = []
+
+    def fake_post(url, payload, token=None, timeout=300.0):
+        calls.append({"url": url, "payload": payload, "token": token})
+        return {"data": [{"b64_json": base64.b64encode(PNG_BYTES).decode()}]}
+
+    def no_get(*args, **kwargs):
+        raise AssertionError("une reference ne doit pas passer par le GET (WAF Cloudflare)")
+
     monkeypatch.setattr("studio.tools.public.upload_public", lambda data, name: "https://tmpfiles.org/dl/ref.png")
+    monkeypatch.setattr(images, "_http_post_json", fake_post)
+    monkeypatch.setattr(images, "_http_get", no_get)
     provider = PollinationsImageProvider(ref_model="gptimage")
 
     binary = run(provider, prompt="plan", reference=Binary(PNG_BYTES, "image/png"))
 
-    url = recorder[0]["url"]
-    assert "gen.pollinations.ai/image/" in url
-    assert "model=gptimage" in url
-    assert "image=https%3A%2F%2Ftmpfiles.org%2Fdl%2Fref.png" in url
-    assert binary.data[:3] == b"\xff\xd8\xff"
+    assert calls[0]["url"].endswith("/v1/images/generations")
+    assert calls[0]["payload"]["model"] == "gptimage"
+    assert calls[0]["payload"]["image"] == ["https://tmpfiles.org/dl/ref.png"]
+    assert binary.media_type == "image/png"
 
 
 def test_plusieurs_references_passent_par_le_post_json(monkeypatch):

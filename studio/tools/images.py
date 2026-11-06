@@ -289,7 +289,6 @@ class PollinationsImageProvider:
 
     async def _generate_with_refs(self, prompt: str, model: str, refs: list[Binary]) -> Binary:
         import hashlib
-        from urllib.parse import quote
 
         ref_model = model if model in self.REF_SUPPORT else self.ref_model
         if ref_model not in self.REF_SUPPORT:
@@ -317,21 +316,19 @@ class PollinationsImageProvider:
 
         async with self._gate:
             await self._pace()
-            if len(urls) == 1:
-                url = (
-                    f"{self.ref_base}/image/{quote(prompt, safe='')}"
-                    f"?model={ref_model}&width={self.width}&height={self.height}"
-                    f"&seed={seed}&nologo=true&image={quote(urls[0], safe='')}"
-                )
-                if api_key:
-                    url += f"&key={quote(api_key, safe='')}"
-                return await self._fetch(url, api_key or None)
-
+            # WAF Cloudflare : le GET avec `image=` dans la query depasse la
+            # limite d'URL des que le prompt est long (400 sans corps). Le POST
+            # met la reference dans le corps JSON et passe.
             payload = {
-                "model": self.multi_ref_model or ref_model,
+                "model": (
+                    (self.multi_ref_model or ref_model)
+                    if len(urls) > 1
+                    else ref_model
+                ),
                 "prompt": prompt,
                 "n": 1,
                 "image": urls,
+                "seed": seed,
                 "response_format": "b64_json",
                 "size": f"{self.width}x{self.height}",
             }
@@ -344,14 +341,14 @@ class PollinationsImageProvider:
                 )
             except Exception as exc:
                 detail = _http_error_detail(exc)
-                message = f"pollinations multiref: echec ({exc})"
+                message = f"pollinations ref: echec ({exc})"
                 if detail:
                     message += f": {detail}"
                 raise RuntimeError(message) from exc
             try:
                 raw = base64.b64decode(data["data"][0]["b64_json"])
             except (KeyError, IndexError, TypeError) as exc:
-                raise RuntimeError(f"pollinations multiref: reponse invalide: {data}") from exc
+                raise RuntimeError(f"pollinations ref: reponse invalide: {data}") from exc
             return Binary(raw, _detect_media_type(raw, ""))
 
     async def _fetch(self, url: str, api_key: str | None) -> Binary:

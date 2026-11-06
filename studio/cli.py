@@ -18,6 +18,7 @@ from .kernel.registry import STUDIO_ROOT, load_registry
 from .project import (
     Project,
     ProjectError,
+    answerable_gate,
     latest_run,
     missing_inputs,
     next_step,
@@ -843,8 +844,8 @@ def cmd_answer(args) -> int:
     workflow_id, inputs = run_start(events, args.run_id)
     if workflow_id is None:
         raise StudioError(f"run inconnu: {args.run_id}")
-    gate = pending_gate(events, args.run_id)
-    if gate is None or gate["id"] != args.gate:
+    gate = answerable_gate(events, args.run_id, args.gate)
+    if gate is None:
         raise StudioError(f"aucune gate en attente '{args.gate}' pour ce run")
     if args.choice not in gate["options"]:
         raise StudioError(
