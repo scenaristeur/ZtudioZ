@@ -166,16 +166,36 @@ def project_memory(project: "Project") -> dict[str, Any]:
 
     store = ArtifactStore(project.artifacts)
     memory: dict[str, Any] = {}
+    latest: dict[str, str] = {}
     for event in events:
         if event.get("run") != run_id:
             continue
         event_type = event.get("type")
         if event_type == "run_started":
             memory.update(event.get("inputs") or {})
-        elif event_type == "node_finished" and "#" not in event.get("node", ""):
-            value = store.get(event["artifact"])
-            if isinstance(value, dict):
-                memory.update(value)
+        elif event_type in ("node_finished", "node_skipped") and "#" not in event.get(
+            "node", ""
+        ):
+            # Un noeud peut avoir ete rejoue (retry) : seule sa derniere version
+            # compte. `node_skipped` est un cache hit, pas une absence de sortie.
+            latest[event["node"]] = event["artifact"]
+
+    for artifact in latest.values():
+        value = store.get(artifact)
+        if isinstance(value, dict):
+            memory.update(value)
+        elif isinstance(value, list):
+            # Sortie de foreach : l'artefact agrege est une liste d'items.
+            # On accumule chaque cle declaree (ex. `image`) comme le fait
+            # `RunResult.outputs`, sinon le chainage M1 -> M2 perd les images.
+            buckets: dict[str, list[Any]] = {}
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                for key, entry in item.items():
+                    buckets.setdefault(key, []).append(entry)
+            for key, entries in buckets.items():
+                memory[key] = entries
     return memory
 
 
@@ -199,6 +219,35 @@ def prepare_inputs(
     inputs = {**memory, **project.context, **explicit}
     inherited = sorted(set(inputs) - set(explicit) - set(project.context))
     return inputs, inherited
+
+
+def plans_from_shots(
+    shots: Any, images: Any, *, default_duration: float = 5.0
+) -> list[dict[str, Any]]:
+    """Federe les sorties M1 (`shots` + `image`) en fiches de plans M2.
+
+    Chaque fiche porte le prompt du plan, son image adressee par hash, un
+    mouvement (vide si le plan n'en declare pas) et une duree (5 s par defaut).
+    Le mouvement reste explicite dans la fiche : la gate storyboard peut le
+    valider avant toute depense video.
+    """
+    shot_list = shots.get("shots") if isinstance(shots, dict) else shots
+    image_list = images.get("image") if isinstance(images, dict) else images
+    if not isinstance(shot_list, list) or not isinstance(image_list, list):
+        return []
+    if not shot_list or len(shot_list) != len(image_list):
+        return []
+
+    plans: list[dict[str, Any]] = []
+    for index, (shot, image) in enumerate(zip(shot_list, image_list)):
+        plan = dict(shot) if isinstance(shot, dict) else {"prompt": str(shot)}
+        plan.setdefault("id", index + 1)
+        plan.setdefault("prompt", "")
+        plan["image"] = image
+        plan.setdefault("motion", "")
+        plan.setdefault("duration", default_duration)
+        plans.append(plan)
+    return plans
 
 
 def missing_inputs(workflow: dict, graph, inputs: dict) -> list[str]:
@@ -318,6 +367,12 @@ def next_step(project: "Project", registry) -> dict | None:
     workflow = registry.workflow(target)
     graph = registry.graph(target)
     inputs, inherited = prepare_inputs(project, workflow, {})
+    if "plans" in (workflow.get("inputs") or {}) and "plans" not in inputs:
+        memory = project_memory(project)
+        plans = plans_from_shots(memory.get("shots"), memory.get("image"))
+        if plans:
+            inputs["plans"] = plans
+            inherited = sorted(set(inherited) | {"plans"})
     missing = missing_inputs(workflow, graph, inputs)
     return {
         "run_id": current["run_id"],

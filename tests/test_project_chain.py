@@ -9,8 +9,12 @@ import json
 import os
 import subprocess
 import sys
+from types import SimpleNamespace
 
-from studio.kernel.registry import STUDIO_ROOT
+from studio.kernel.artifacts import ArtifactStore
+from studio.kernel.journal import Journal
+from studio.kernel.registry import STUDIO_ROOT, load_registry
+from studio.project import Project, next_step, project_memory
 from tests.helpers import write
 
 DISCUSSION = "Un phare, une voix, un choix : rester ou partir."
@@ -100,6 +104,54 @@ def test_un_run_bloque_ne_nourrit_pas_la_memoire(tmp_path):
 
     assert second.returncode != 0
     assert "treatment" in second.stdout + second.stderr
+
+
+def test_next_federe_les_plans_video_depuis_m1(tmp_path):
+    root = projet(tmp_path)
+    assert m0(root, "--answer", "gate_brief=continue").returncode == 0
+    assert m1(root, {"reference": REFERENCE}).returncode == 0
+
+    project = Project.load(root)
+    step = next_step(project, load_registry(STUDIO_ROOT))
+    memory = project_memory(project)
+    shots = memory["shots"]
+    images = memory["image"]
+
+    assert step["workflow"] == "studio:workflow/m2-video"
+    assert step["missing"] == []
+    assert "plans" in step["inherited"]
+
+    plans = step["inputs"]["plans"]
+    assert len(plans) == len(shots) == len(images)
+    for index, plan in enumerate(plans):
+        assert plan["id"] == shots[index]["id"]
+        assert plan["prompt"] == shots[index]["prompt"]
+        assert plan["image"] == images[index]
+        assert plan["duration"] == 5.0
+        assert plan["motion"] == ""
+
+
+def test_project_memory_lit_les_noeuds_en_cache_et_la_derniere_version(tmp_path):
+    store = ArtifactStore(tmp_path / "artifacts")
+    old = store.put({"shots": [{"id": 1, "prompt": "vieux"}]})
+    new = store.put({"shots": [{"id": 1, "prompt": "nouveau"}]})
+    images = store.put(
+        [{"image": {"artifact": "a"}}, {"image": {"artifact": "b"}}]
+    )
+
+    journal = Journal(tmp_path / "journal.jsonl")
+    journal.append("run_started", run="r", workflow="w", inputs={"treatment": "T"})
+    journal.append("node_finished", run="r", node="shots", artifact=old, cost=0)
+    journal.append("node_finished", run="r", node="shots", artifact=new, cost=0)
+    journal.append("node_skipped", run="r", node="shots", artifact=new, reason="cache", cost=0)
+    journal.append("node_finished", run="r", node="images", artifact=images, cost=0)
+    journal.append("run_finished", run="r", status="completed")
+
+    project = SimpleNamespace(root=tmp_path, journal=tmp_path / "journal.jsonl", artifacts=tmp_path / "artifacts")
+    memory = project_memory(project)
+
+    assert memory["shots"] == [{"id": 1, "prompt": "nouveau"}]
+    assert memory["image"] == [{"artifact": "a"}, {"artifact": "b"}]
 
 
 def test_une_entree_explicite_ecrase_la_memoire(tmp_path):
