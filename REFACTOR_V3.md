@@ -1,9 +1,11 @@
 # REFACTOR_V3 — ZtudioZ Studio (runtime d'agents déclaratif)
 
-> **Ce fichier est la version de travail, autosuffisante.** Le studio v3 est **autonome** :
-> il ne lit, ne copie et ne requiert aucun dossier du projet d'origine. Tout son état vit
-> dans `studio/`, `tests/` et `runs/`. C'est ici que l'on met à jour l'avancement, les
-> décisions et la dette technique.
+> **Ce fichier est la version de travail.** L'original, figé au moment de la décision, reste
+> consultable dans le dépôt de référence : `/home/smag/dev/ZtudioZ/REFACTOR_V3.md` (branche
+> `main`). C'est une **référence documentaire**, utile tant que la refonte n'est pas terminée ;
+> le code, lui, est **autonome** : il ne lit ni ne requiert aucun dossier extérieur. Tout son
+> état vit dans `studio/`, `tests/` et `runs/`. C'est ici que l'on met à jour l'avancement,
+> les décisions et la dette technique.
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
@@ -18,10 +20,12 @@
 > freeform jugées et cohérence `ok`/`constraints` verrouillée par schéma.
 > **Décideur** : l'humain (super-décideur).
 > **Date de décision** : 2026-10-31.
-> **Branche** : `studio-v3`, **orpheline**, worktree `/home/smag/dev/ZtudioZ-v3`.
+> **Branche** : `studio-v3`, **orpheline**, dépôt autonome `/home/smag/dev/ZtudioZ-v3`.
+> **Base de code v1 (référence)** : `main` @ `4311be5` — conservée comme **source
+> documentaire** du refactor, jamais requise à l'exécution.
 > **Autonomie** (2026-11-06) : aucun chemin, fichier ou environnement du projet d'origine
-> n'est requis à l'exécution. Les sections d'audit ci-dessous sont **historiques** et ne
-> décrivent plus une dépendance.
+> n'est lu par le code. Les sections d'audit ci-dessous sont **historiques** et ne décrivent
+> plus une dépendance.
 > **Périmètre** : constat, diagnostic, architecture, plan par paliers, reprise, dette connue.
 
 ---
@@ -739,21 +743,41 @@ Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 | Élément | Emplacement |
 |---|---|
 | **Ce document (version de travail)** | `REFACTOR_V3.md`, branche `studio-v3` |
+| Document de référence (source) | `/home/smag/dev/ZtudioZ/REFACTOR_V3.md`, branche `main` — **documentaire** |
+| Code de référence (source) | `/home/smag/dev/ZtudioZ`, branche `main` @ `4311be5` — **documentaire** |
+| Projets extérieurs | `/home/smag/dev/ZtudioZ/projets/` — **jamais lus ni écrits** par la v3 |
 | Code v3 | `studio/` + `tests/` |
 | Projets et leurs états | `runs/<slug>/` (config, journal, artefacts) |
 | Environnement v3 | `.venv/` (isolé : PyYAML, jsonschema, pyld, pytest) |
 | Secrets | `.env` à la racine du dépôt, **jamais commité** |
 
-### 10.2 Autonomie
+### 10.2 Procédure de création — **déjà exécutée (archive)**
+
+> Conservée comme trace de la source du refactor. Depuis le 2026-11-06, `ZtudioZ-v3` est un
+> dépôt autonome : aucun de ces chemins n'est requis à l'exécution.
+
+```bash
+git worktree add --detach /home/smag/dev/ZtudioZ-v3 main
+cd /home/smag/dev/ZtudioZ-v3
+git checkout --orphan studio-v3
+git rm -rf .                        # supprime les fichiers DANS le worktree uniquement
+git commit --allow-empty -m "chore: branche orpheline studio v3"
+python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
+```
+
+`git rm -rf .` n'affecte que le worktree : `main` et `projets/` restent intacts, et
+`projets*` est gitignoré donc jamais copié.
 
 La branche `studio-v3` est **orpheline** : elle ne partage ni historique ni fichiers avec un
 autre dépôt. Toute la configuration, les skills, les workflows et les projets vivent dans ce
-worktree. Aucun chemin extérieur n'est requis pour valider, lancer ou reprendre un run.
+dépôt. Aucun chemin extérieur n'est requis pour valider, lancer ou reprendre un run.
 
 ### 10.3 Reprendre dans une nouvelle session
 
 1. Lire ce document **en entier** (il est dans la branche, à côté du code).
-2. Lire les règles de code de la section 8 (test rouge d'abord, contrats, style).
+2. Lire les règles de code de la section 8 (test rouge d'abord, contrats, style). Pour le
+   contexte de la refonte, les règles d'origine restent consultables dans
+   `/home/smag/dev/ZtudioZ/AGENTS.md` et `AGENTS_CODE.md` (**documentaire**).
 3. Vérifier l'état :
 
 ```bash
@@ -766,7 +790,8 @@ git log --oneline -5
 
 4. Identifier le palier en cours via la section 7 (colonne **État**) et le journal (section 11).
 5. Continuer **par un test rouge**, jamais par du code.
-6. Ne jamais lire ni écrire hors du worktree : `runs/` est la seule source d'état.
+6. Ne jamais lire ni écrire dans `/home/smag/dev/ZtudioZ/projets/` : la v3 n'en dépend pas
+   et ne doit pas le modifier. Pour le code, `runs/` est la seule source d'état.
 
 ### 10.4 Déléguer
 
@@ -918,12 +943,27 @@ panne borné, deux contrats réels (UA, borne du seed) verrouillés par test.
 
 ## 13. Annexes
 
-### 13.1 Correspondance historique
+### 13.1 Correspondance historique (source → v3)
+
+> **Documentaire, pas une dépendance.** Cette table conserve la provenance des décisions
+> pendant que la refonte n'est pas terminée. La colonne « Devenir » décrit le plan arrêté à
+> la décision, pas un import : le code v3 est autonome et ne lit aucun de ces fichiers.
+
+| Source (référence) | v3 | Devenir prévu |
+|---|---|---|
+| `pipeline/orchestrator.py` | `studio/kernel/graph.py` + `studio/catalog/workflows/*.yamlld` | remplacé en M3 |
+| `pipeline/steps/*` | nœuds de workflow + `ToolAgent` (D6) | remplacé en M3 |
+| `pipeline/services/*` | `studio/tools/` (un adaptateur par service) | réécrit, encapsulé en M3 |
+| `pipeline/ztudioz_toolkit.py` (25 outils MCP) | `studio/catalog/tools.yamlld` (`kind: mcp`) | **hors périmètre** (D22) |
+| `.opencode/skills/ztudioz-*` (11) | champ `skills:` des agents, via `extra_skill_roots` (D15) | packs externes optionnels |
+| `.opencode/agents/*.md` (9 subagents) | agents déclarés dans `studio/catalog/agents/` | remplacé en M3 |
+| `constitution/agents.json` | `studio/catalog/workflows/*.yamlld` | absorbé |
+| `skills/*.md` (5 orphelins) | — | non repris |
+| `pipeline/config.yaml` (`active:` + `providers[]`) | `studio/catalog/tools.yamlld` + modèle des agents | inspire le registre, sans lecture |
+| `api/`, `web/` | revus intégralement | M3 |
 
 La section 2 et les entrées de journal antérieures au 2026-11-06 parlent encore du projet
-d'origine : c'est de l'**histoire de la décision**, pas une dépendance. Aucun de ses fichiers,
-chemins ou environnements n'est lu par le studio v3. Les acquis utiles (bible, références,
-keyframes, providers) ont été réécrits et testés dans ce dépôt.
+d'origine : c'est de l'**histoire de la décision**, pas une dépendance.
 
 ### 13.2 Glossaire
 
