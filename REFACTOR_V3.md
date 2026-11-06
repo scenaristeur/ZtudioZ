@@ -449,10 +449,11 @@ Chaque palier est démontrable et se termine par une validation humaine.
 | **M0** conversation | noyau complet, 3 agents LLM, 1 gate, 1 workflow, provider mock | YAML-LD validé ; DAG exécuté ; gate bloquante ; reprise après gate ; parallélisme prouvé par test ; **0 appel réseau** | 0 | **réalisé, 29 tests verts** |
 | **M1** scénario + photos | artefacts typés + binaires, adaptateur image, vérif vision, gate sur images, invalidation par lignée | 3 shots + 3 images avec refs ; verdict vision ; coût journalisé ; 2ᵉ run = cache hit ; changement de ref → invalidation aval **uniquement** | tests 0 / run réel sur demande | **réalisé ; run réel 2026-11-05 : brief contraint (max 2 plans) → 2 plans → 2 images JPEG, 57 s** |
 | **M2** assets + montage | `ToolAgent` (ffmpeg), dispatch des outils, `on_item_failure`, sous-workflows, `retry` de gate ; puis `VideoAgent` et workflow `m2-video` | `ffprobe` conforme ; montage reproductible ; échec d'un item n'arrête pas le run ; **vraies vidéos générées avant le montage** | 0 en mock / run réel sur demande | **réalisé, 80 tests verts** ; run réel 2026-11-05 : 2 images → 2 vidéos `wan-fast` 512×512 de 5,03 s → montage 10,06 s, **0,10 $**, gate avant dépense |
-| **M3** intégration v1 | **refonte complète** de `pipeline/`, `api/`, `web/` : adaptateurs providers, routes, UI pilotée par le graphe | un projet réel avance d'un palier à l'autre depuis la CLI et depuis le web | selon run | **en cours — tranches 1 à 5 livrées ; clôture D10/D11/D22 à faire** |
+| **M3** providers + web | adaptateurs providers, routes, UI pilotée par le graphe, autonomie complète | un projet réel avance d'un palier à l'autre depuis la CLI et depuis le web | selon run | **en cours — tranches 1 à 5 livrées ; clôture D10/D11 à faire** |
 | **M4** production | reprise des acquis : cohérence refs, double-ancre, keyframes, budget, rapports | un plan produit et vérifié par vision, sans régression de cohérence | selon run | **en cours — D23 (vision réelle) et D26 (freeform) livrés** |
 
-M0 à M2 sont **autonomes** : ils ne dépendent d'aucun fichier de la v1.
+Tout le runtime est **autonome** : aucun fichier, chemin ou environnement extérieur n'est
+requis pour valider, lancer ou reprendre un run.
 
 Écart assumé sur M0 : le critère « `Ctrl-C` + `resume` » a été validé **au niveau du moteur**
 (relancer `run()` avec les mêmes entrées + la réponse de gate reprend aux nœuds restants,
@@ -460,7 +461,7 @@ M0 à M2 sont **autonomes** : ils ne dépendent d'aucun fichier de la v1.
 Le rattrapage du signal est reporté en M2, quand des runs longs existeront vraiment — **clos
 en M2** : `Ctrl-C` sort 130, le journal permet de reprendre, test subprocess à l'appui.
 
-### 7.1 Découpage M3 — intégration v1
+### 7.1 Découpage M3 — providers, API, web
 
 Le critère du palier est un projet réel qui avance d'un palier à l'autre depuis la CLI **et**
 depuis le web. Le travail est découpé en tranches démontrables, chacune TDD :
@@ -526,7 +527,7 @@ Tests ajoutés après M2 (run réel & branchements) — **+24 tests, 104 verts**
 |---|---|---|
 | `test_mcp_dispatch.py` | 4 | serveur stdio réel (mcp 2.x), texte et JSON parsés, cache, serveur inconnu = échec net |
 | `test_pollinations.py` | 14 | URL déterministe (seed = prompt+ref), sniff media-type, délais annoncés honorés (402/503, FREE_LIMIT comme SERVICE_UNAVAILABLE), sériage 45 s, backoff, élévation d'erreur nette |
-| `test_skills_roots.py` | 4 | `extra_skill_roots` charge des packs externes, `--skills-root` au CLI, et les 11 skills v1 sont des packs valides (skip si dépôt v1 absent) |
+| `test_skills_roots.py` | 3 | `extra_skill_roots` charge des packs externes et `--skills-root` les expose au CLI |
 | `test_images.py` (+2) | 2 | `_text_prompt` : phrase naturelle du plan, pas de bloc JSON dans le prompt d'image |
 | `test_m1_e2e.py` (+1) | 1 | `notes` du verdict : chaîne ou liste, selon le schéma élargi |
 
@@ -726,7 +727,7 @@ Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 | Sur-abstraction | plafond dur : 4 types de nœuds, 1 format, pas de plugins |
 | Divergence config ↔ skills ↔ outils | validation au chargement + test anti-dérive (extension de `test_doc_drift.py`) |
 | Le noyau grossit sans fin | chaque garantie a son test ; une garantie sans test n'entre pas |
-| Le worktree divergerait de la v1 | `main` reste la référence ; la v3 ne copie rien avant M3 |
+| Le worktree dépendrait d'un autre dépôt | dépôt autonome : aucun remote, aucun chemin externe, `runs/` est la seule source d'état |
 | Coût involontaire | provider mock par défaut en test, budget par nœud, run réel uniquement sur demande explicite |
 
 ---
@@ -852,8 +853,8 @@ condition de :
 | 2026-11-06 | retry | **Feedback cible par item** : `--feedback-item gate#index=texte` (répétable) rejoue uniquement les items visés et les items en échec ; la correction n'est injectée que dans les items visés. Un feedback global (`--feedback`) continue de rejouer tout le fan-out. Mélanger les deux pour une même gate est refusé. 4 tests | assistant |
 | 2026-11-06 | retry | **Retry cible des foreach** : un `retry` de gate sans feedback ne rejoue que les items en echec ; les items reussis restent en cache et ne sont plus repayes. Avec feedback, tout le fan-out est rejoue (la correction s'applique a tous). Sans item fautif, retry reste une nouvelle prise complete. 3 tests | assistant |
 | 2026-11-06 | agnes | **Agnes local + keyframes + repli explicite** : providers `agnes` image/vidéo (`studio/tools/agnes.py`), `m2-keyframes` (deux images début/fin, gate avant vidéo), ordre `start_image`/`end_image` garanti, `503 video_queue_full` retenté puis expliqué. Repli Agnes → Pollinations **sur accord humain** (`--fallback ask|pollinations|fail`) : `flux` sans référence puis `gptimage`, `wan-fast` avec image. 12 tests de repli + 10 tests Agnes/keyframes | assistant |
-| 2026-11-06 | bible | **Bible + sheets intégrées** : `studio/bible.py` lit l'arborescence v1 (`bible/<type>/<slug>/fiche.yaml`, `sheet_<version>.png`), outil `bible.sheets`, agent `sheet-keeper`, entrée `references` de `m1-scene`, CLI `studio bible`. Les planches sont transmises aux ImageAgents et au contrôleur (vision). Références vidéo transmises aussi. 6 tests | assistant |
-| 2026-11-06 | références | **Intégration v1 : images de référence** : le provider Pollinations accepte `references` (liste), utilise `gen.pollinations.ai` + `gptimage` pour une référence (`image=URL`) et le POST `/v1/images/generations` pour le multi-ref. `strict_refs` empêche de perdre silencieusement l'ancre. L'exécuteur collecte toutes les images référencées. `madmax-2208` passe à `ref_model: gptimage` ; verdict réel : image 2 corrigée, image 1 encore à reprendre | assistant |
+| 2026-11-06 | bible | **Bible + sheets intégrées** : `studio/bible.py` lit l'arborescence du projet (`bible/<type>/<slug>/fiche.yaml`, `sheet_<version>.png`), outil `bible.sheets`, agent `sheet-keeper`, entrée `references` de `m1-scene`, CLI `studio bible`. Les planches sont transmises aux ImageAgents et au contrôleur (vision). Références vidéo transmises aussi. 6 tests | assistant |
+| 2026-11-06 | références | **Images de référence** : le provider Pollinations accepte `references` (liste), utilise `gen.pollinations.ai` + `gptimage` pour une référence (`image=URL`) et le POST `/v1/images/generations` pour le multi-ref. `strict_refs` empêche de perdre silencieusement l'ancre. L'exécuteur collecte toutes les images référencées. `madmax-2208` passe à `ref_model: gptimage` ; verdict réel : image 2 corrigée, image 1 encore à reprendre | assistant |
 | 2026-11-05 | opencode | **Pilotage depuis opencode** : agent `studio-operator` + commandes `/studio-status`, `/studio-next`, `/studio-run`, `/studio-answer`, `/studio-journal`, `/studio-validate`. Nouvelle commande CLI `answer <run_id> <gate> <choix>` qui relit workflow et entrées du journal (pas besoin de reconstruire `--input`). 2 tests, **217 verts** | assistant |
 | 2026-11-05 | D26 | **Freeform vérifiable.** Le verdict porte `constraints` (`text`, `respected`, `evidence`) ; le schéma interdit `ok=true` si une contrainte est `respected=false`. Prompt v6 exige une entrée par contrainte freeform. 4 tests. **Vérifié en réel** : Albert rend `ok=false` argumenté et `{"text":"pas de dialogue","respected":true,"evidence":"aucune bulle..."}` | assistant |
 | 2026-11-06 | autonomie | **Le studio v3 devient autonome.** Le pont lecture seule vers les projets externes est retiré ; plus aucun test, skill, agent ou document de travail ne pointe vers un dossier ou un environnement du projet d'origine. Les acquis utiles (bible, références, keyframes) restent, réécrits et testés dans `studio/`. D22 clos comme hors périmètre | humain + assistant |
@@ -917,20 +918,12 @@ panne borné, deux contrats réels (UA, borne du seed) verrouillés par test.
 
 ## 13. Annexes
 
-### 13.1 Correspondance v1 → v3
+### 13.1 Correspondance historique
 
-| v1 | v3 | Devenir |
-|---|---|---|
-| `pipeline/orchestrator.py` | `studio/kernel/graph.py` + `studio/catalog/workflows/*.yamlld` | remplacé en M3 |
-| `pipeline/steps/*` | nœuds de workflow + `ToolAgent` (D6) | remplacé en M3 |
-| `pipeline/services/*` | `studio/tools/` (un adaptateur par service) | réutilisé, encapsulé en M3 |
-| `pipeline/ztudioz_toolkit.py` (25 outils MCP) | `studio/catalog/tools.yamlld` (`kind: mcp`) | exposé, plus dupliqué |
-| `.opencode/skills/ztudioz-*` (11) | champ `skills:` des agents, via `extra_skill_roots` (D15) | **conservé tel quel** |
-| `.opencode/agents/*.md` (9 subagents) | agents déclarés dans `studio/catalog/agents/` | remplacé en M3 |
-| `constitution/agents.json` | `studio/catalog/workflows/*.yamlld` | absorbé |
-| `skills/*.md` (5 orphelins) | — | supprimés en M3 |
-| `pipeline/config.yaml` (`active:` + `providers[]`) | `studio/catalog/tools.yamlld` + modèle des agents | inspire le registre, inchangé côté v1 |
-| `api/`, `web/` | revus intégralement | M3 |
+La section 2 et les entrées de journal antérieures au 2026-11-06 parlent encore du projet
+d'origine : c'est de l'**histoire de la décision**, pas une dépendance. Aucun de ses fichiers,
+chemins ou environnements n'est lu par le studio v3. Les acquis utiles (bible, références,
+keyframes, providers) ont été réécrits et testés dans ce dépôt.
 
 ### 13.2 Glossaire
 
@@ -940,4 +933,4 @@ panne borné, deux contrats réels (UA, borne du seed) verrouillés par test.
 - **Gate** : nœud de validation humaine bloquant ; une réponse absente bloque, jamais ne saute.
 - **Pack de connaissance** : `SKILL.md` injecté dans le prompt système d'un agent.
 - **Palier** : étape de la refonte, démontrable et validable (M0…M4).
-- **Dette D1–D15** : écarts consignés en section 12, chacun rattaché à un palier.
+- **Dette D1–D30** : écarts consignés en section 12, chacun rattaché à un palier.
