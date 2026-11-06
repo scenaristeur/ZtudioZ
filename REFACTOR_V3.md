@@ -9,7 +9,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 277 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 278 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -715,7 +715,7 @@ Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `gemma-4-31b-it` d�
 avec `constraints: [{text: "pas de dialogue", respected: true, evidence: "aucune bulle..."}]`.
 Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 
-Tests ajoutés pour le verdict plan par plan et le retry ciblé (M4) — **+18 tests, 277 verts** :
+Tests ajoutés pour le verdict plan par plan et le retry ciblé (M4) — **+19 tests, 278 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
@@ -728,6 +728,7 @@ Tests ajoutés pour le verdict plan par plan et le retry ciblé (M4) — **+18 t
 | `test_pollinations.py` (400) | 1 | une erreur HTTP 400 expose le corps de réponse de l'API, pour diagnostiquer un refus de prompt ou de référence |
 | `test_pollinations.py` (référence) | 1 | une référence passe désormais par **POST** `/v1/images/generations` (le GET avec `image=` déclenchait le WAF Cloudflare sur les prompts longs) |
 | `test_answer_recovery.py` | 4 | un run `failed` laisse sa gate repondable si elle n'a jamais ete tranchee ; une gate deja franchie, un run termine ou une autre gate ne se rouvrent pas |
+| `test_pollinations.py` (kontext) | 1 | `kontext` est accepté comme modèle de référence (`strict_refs`), avec le même POST image→image |
 
 L'UI applique la même règle : à `gate_verdict`, chaque plan fautif reçoit sa propre zone de
 correction et le bouton « Recommencer les plans fautifs » envoie `feedback_items` ; la zone
@@ -911,6 +912,7 @@ condition de :
 | 2026-11-06 | run réel | **Tentative de correction ciblée `madmax-2208`** (demande humaine explicite) : `retry` + `feedback-item gate_verdict#0=...`. Le run a échoué sur un HTTP 400 Pollinations avant de produire l'image 1 ; état `failed`. Les images 2 et 3 restent réutilisables via le correctif ci-dessus. Aucun nouvel appel payant lancé sans accord | assistant + humain |
 | 2026-11-06 | pollinations | **Cause du 400 identifiée** : le GET `/image/{prompt}?image=...` est rejeté par le WAF Cloudflare quand l'URL est longue. Les références passent maintenant par **POST `/v1/images/generations`** (corps JSON, `image: [url]`, `seed` conservé). Le 400 visible ensuite n'est plus un problème d'URL : Azure gptimage répond « rejected by the safety system » | assistant |
 | 2026-11-06 | reprise | **`answer` reprend un run échoué** : si la gate a été posée puis laissée en attente par un échec, elle reste répondable (`answerable_gate`) ; une gate déjà tranchée ne se rouvre pas. 4 tests, **277 verts**. La même commande de retry ciblé redevient utilisable après un échec | assistant |
+| 2026-11-06 | run réel | **`madmax-2208` débloqué avec `kontext`.** Le safety Azure de `gptimage` rejette la scène (`safety_violations=[violence]`) même avec un feedback neutre. Bascule du projet sur `ref_model: kontext` (FLUX Kontext, gratuit, image→image) : l'image 1 est régénérée sans 400. Verdict plan par plan : plans 2 et 3 `ok`, plan 1 encore fautif (cadrage bas sur les roues absent). Run `blocked` à `gate_verdict`, décision humaine en attente. `kontext` ajouté à `REF_SUPPORT`, 1 test, **278 verts** | assistant + humain |
 
 ---
 

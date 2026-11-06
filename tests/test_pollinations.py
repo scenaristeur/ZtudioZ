@@ -131,6 +131,25 @@ def test_plusieurs_references_passent_par_le_post_json(monkeypatch):
     assert len(calls[0]["payload"]["image"]) == 2
 
 
+def test_kontext_est_accepte_comme_modele_de_reference(monkeypatch):
+    import base64
+
+    calls = []
+
+    def fake_post(url, payload, token=None, timeout=300.0):
+        calls.append(payload)
+        return {"data": [{"b64_json": base64.b64encode(PNG_BYTES).decode()}]}
+
+    monkeypatch.setattr("studio.tools.public.upload_public", lambda data, name: "https://tmpfiles.org/dl/ref.png")
+    monkeypatch.setattr(images, "_http_post_json", fake_post)
+    provider = PollinationsImageProvider(ref_model="kontext", strict_refs=True)
+
+    run(provider, prompt="plan", reference=Binary(PNG_BYTES, "image/png"))
+
+    assert calls[0]["model"] == "kontext"
+    assert calls[0]["image"] == ["https://tmpfiles.org/dl/ref.png"]
+
+
 def test_strict_refs_refuse_un_modele_sans_reference(monkeypatch):
     monkeypatch.setattr("studio.tools.public.upload_public", lambda data, name: "https://tmpfiles.org/dl/ref.png")
     provider = PollinationsImageProvider(ref_model="flux", strict_refs=True)

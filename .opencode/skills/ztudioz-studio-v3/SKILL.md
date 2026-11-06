@@ -148,8 +148,12 @@ export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
   Le prompt image porte le plan, l'ancre `reference` et les contraintes `freeform` du brief ;
   un `retry` de `gate_images` avec feedback regénère réellement les images.
   Pour l'ancrage visuel, configurer `ref_model: gptimage` et `strict_refs: true` : une
-  référence passe alors par `gen.pollinations.ai` avec `image=URL` ; plusieurs références
-  passent par le POST JSON en liste. `flux` seul est texte→image et ignore les pixels.
+  référence passe par le **POST** `/v1/images/generations` (`image: [URL]`) ; le GET
+  `image=URL` est rejeté par le WAF Cloudflare dès que le prompt est long. `flux` seul
+  est texte→image et ignore les pixels.
+  Si le safety Azure de `gptimage` rejette une scène (`safety_violations=[violence]`),
+  basculer le projet sur `ref_model: kontext` (FLUX Kontext, gratuit, image→image) :
+  même ancrage, pas de filtre Azure. Ne jamais retirer `strict_refs` pour contourner.
 - Vidéos : `--video-provider pollinations` (`wan-fast` défaut, ~0,01 $/s ; `grok-video-pro`
   ~0,05 $/s via `STUDIO_VIDEO_MODEL`). Facturé à la seconde, budget refusé avant l'appel.
 - Agnes local (`http://localhost:8765`) : `--image-provider agnes` et

@@ -204,7 +204,14 @@ class PollinationsImageProvider:
     ou POST `/v1/images/generations` avec une liste d'images pour le multi-ref.
     """
 
-    REF_SUPPORT = {"gptimage", "gpt-image-2", "gptimage-large"}
+    REF_SUPPORT = {
+        "gptimage",
+        "gpt-image-2",
+        "gptimage-large",
+        "kontext",
+        "flux.1-kontext-pro",
+        "black-forest-labs/flux.1-kontext-pro",
+    }
 
     def __init__(
         self,
