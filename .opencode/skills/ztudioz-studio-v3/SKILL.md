@@ -78,6 +78,22 @@ dernier run, son coût, ses nœuds et la gate en attente. `bible` liste les enti
 **avant** tout appel : une entrée manquante ou un JSON invalide sort en erreur propre, sans
 traceback.
 
+### Pont lecture seule v1
+
+Les projets v1 restent dans `/home/smag/dev/ZtudioZ/projets/` et ne sont **jamais modifiés**.
+Le CLI les inspecte :
+
+```bash
+python -m studio.cli v1 list   --projects-root /home/smag/dev/ZtudioZ/projets
+python -m studio.cli v1 status <slug> --projects-root /home/smag/dev/ZtudioZ/projets
+python -m studio.cli v1 files  <slug> --pattern 'production/video/*.mp4' \
+  --projects-root /home/smag/dev/ZtudioZ/projets
+```
+`STUDIO_V1_PROJECTS` peut remplacer `--projects-root`. Le statut reconstruit les étapes
+faites (checkpoint + artefacts implicites, comme la v1), migre `production` → `produce` en
+mémoire, et signale les fiches YAML cassées sans bloquer l'inspection. Les outils déclaratifs
+`v1.list_projects`, `v1.project_status`, `v1.project_files` exposent la même lecture.
+
 ### Bible et références
 
 La bible v1 est lue telle quelle : `bible/<type>/<slug>/fiche.yaml` + `sheet_<version>.png`.

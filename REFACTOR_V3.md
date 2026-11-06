@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 260 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 269 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -167,7 +167,7 @@ studio/
   web/             UI Vue 3 + Vite pilotee par le graphe (dist servi par l'API)
   cli.py           run | journal | validate | invalidate | serve | --skills-root | --project
   project.py       studio.yaml -> providers + contexte + racine artefacts/journal
-tests/             45 fichiers, 260 tests
+tests/             46 fichiers, 269 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -464,7 +464,7 @@ depuis le web. Le travail est découpé en tranches démontrables, chacune TDD :
 | 3 | **Enchaînement des paliers** : M0 → M1 → M2 depuis la CLI, gates humaines inchangées — **fait** | un projet avance jusqu'au montage, reprise après `Ctrl-C` comprise | D10 |
 | 4 | **API** : projets, runs, journal, artefacts, réponse aux gates — **fait** | le journal d'un run est lisible en HTTP, une gate se répond sans CLI | D11, D16 |
 | 5 | **Web** : UI pilotée par le graphe, plus de vues par étape — **fait** | une gate se voit et se répond dans le navigateur | D22 |
-| 6 | **Clôture M3** : coûts réels, toolkit v1 exposé, replay | un run réel se pilote de bout en bout depuis le web | D11, D22, D30 |
+| 6 | **Clôture M3** : coûts réels, toolkit v1 exposé, replay — **pont lecture seule v1 livré** (`studio v1 list/status/files`, outils `v1.*`) ; coûts réels et replay restent à faire | un run réel se pilote de bout en bout depuis le web | D11, D22, D30 |
 
 Le stockage public de la vidéo reste `tmpfiles.org` : décision humaine du 2026-11-05,
 consignée en D30. Un stockage maîtrisé est repoussé à M4.
@@ -761,7 +761,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 260 passed
+.venv/bin/python -m pytest tests/      # 269 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -851,6 +851,7 @@ condition de :
 | 2026-11-05 | M1 | **Le verdict n'était pas actionnable** : après `gate_images=continue`, M1 se terminait sur `verdict`, sans gate. Ajout de `gate_verdict` (`needs: [verdict, images]`) : `continue` clôt M1, `retry` + feedback régénère les images **et** rejoue le contrôleur (gemma), puis repose la gate. `continuity-checker` v9 déclare `feedback`. 1 test ajouté, **207 verts** | assistant |
 | 2026-11-05 | UI | **Verdict affiché et correction proposée** : à `gate_verdict`, l'UI rend le verdict (ok/notes/contraintes avec preuves) et pré-remplit la zone de correction avec les contraintes violées. Le bouton devient « Recommencer les images avec cette correction » ; `graph.gate.retry` expose l'étape à rejouer (`images`). | assistant |
 | 2026-11-05 | CLI | **CLI fiabilisé** : parsing strict de `--input`/`--answer`/`--feedback`, preflight des entrées requises avant tout appel, erreurs `StudioError` sans traceback, `journal --run`, commandes `next` (palier suivant + entrée manquante) et `status` (dernier run, coût, gate). Les gates déjà franchies ne sont plus reposées lors d'une correction en aval. 8 tests, **215 verts** | assistant |
+| 2026-11-06 | v1 | **Pont lecture seule du toolkit v1** : `studio v1 list/status/files` et outils `v1.list_projects`, `v1.project_status`, `v1.project_files`. Lit `projets/` sans jamais l'ecrire (checkpoint migre en memoire, artefacts implicites comme la v1, fiches YAML cassees signalees sans bloquer l'inspection). 9 tests, demo sur les 8 projets reels | assistant |
 | 2026-11-06 | retry | **Feedback cible par item** : `--feedback-item gate#index=texte` (répétable) rejoue uniquement les items visés et les items en échec ; la correction n'est injectée que dans les items visés. Un feedback global (`--feedback`) continue de rejouer tout le fan-out. Mélanger les deux pour une même gate est refusé. 4 tests | assistant |
 | 2026-11-06 | retry | **Retry cible des foreach** : un `retry` de gate sans feedback ne rejoue que les items en echec ; les items reussis restent en cache et ne sont plus repayes. Avec feedback, tout le fan-out est rejoue (la correction s'applique a tous). Sans item fautif, retry reste une nouvelle prise complete. 3 tests | assistant |
 | 2026-11-06 | agnes | **Agnes local + keyframes + repli explicite** : providers `agnes` image/vidéo (`studio/tools/agnes.py`), `m2-keyframes` (deux images début/fin, gate avant vidéo), ordre `start_image`/`end_image` garanti, `503 video_queue_full` retenté puis expliqué. Repli Agnes → Pollinations **sur accord humain** (`--fallback ask|pollinations|fail`) : `flux` sans référence puis `gptimage`, `wan-fast` avec image. 12 tests de repli + 10 tests Agnes/keyframes | assistant |
@@ -893,7 +894,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D22, D30.
 | ~~D19~~ | ~~Dispatch `kind: mcp` refusé~~ | **clos** : client stdio + table `servers:` + mapping `arguments:` ; testé contre serveur jouet mcp 2.x | — |
 | D20 | **Un seul outil par `ToolAgent`** : la convention « exactement un outil déclaré » évite le routage multi-outils ; un agent qui compose deux outils n'existe pas | `executor._exec_tool` | M3 si le besoin apparaît |
 | D21 | **Déterminisme des media réels** : les clips synthétiques sont `bitexact` (retry = déduplication parfaite), un mp4/JPEG réel ne l'est pas — la déduplication par contenu n'y suffira pas | `tools/media.py`, `tools/images.py` | M4 |
-| D22 | **Le toolkit v1 (~25 outils MCP) n'est pas exposé** : le mécanisme marche, il manque le serveur (camel, context `projets/`) et ses fiches d'outils dans le registre | `pipeline/ztudioz_toolkit.py` v1, `tools.yamlld` | M3 — exposition, pas duplication |
+| D22 | **Le toolkit v1 (~25 outils MCP) n'est pas exposé** : le mécanisme marche, il manque le serveur (camel, context `projets/`) et ses fiches d'outils dans le registre. **Pont lecture seule livré** (`v1.list_projects`, `v1.project_status`, `v1.project_files` + CLI `studio v1`) ; les outils d'écriture restent hors périmètre | `pipeline/ztudioz_toolkit.py` v1, `tools.yamlld` | M3 — exposition, pas duplication |
 | ~~D23~~ | ~~Le verdict vision est un proxy texte~~ | **clos en M4** : un agent qui declare `images` recoit les binaires, le provider les envoie en `image_url` (data URI) ; `continuity-checker` passe a `gemma-4-31b-it` et voit les pixels. Verifie en reel sur deux JPEG de `feu-follet-v2` | `catalog/agents/continuity-checker.yamlld`, `_exec_agent`, `tools/llm.py` | — |
 | ~~D24~~ | ~~Contraintes du brief perdues avant les plans~~ | **clos** : `constraints.max_shots` entre dans le schéma du brief, `brief` devient entrée déclarée de `m1-scene` et de `shot-list`, et `limit:` borne le `foreach` avec troncature journalisée. Garde fou : feu-follet (6 shots produits par le LLM, max 2 demandé) ne paie plus que 2 images | — |
 | ~~D25~~ | ~~Pas de contexte projet~~ | **clos en M3.2** : le projet porte un `context:` (brief, contraintes, référence), fusionné aux entrées du run ; le workflow declare ce qu'il consomme une fois (`context:`), les nœuds n'en redeclarent rien. Entrée explicite prioritaire, contexte requis absent = échec avant appel, contexte optionnel absent = pas de borne. `m1-scene` ne redéclare plus `brief` | `studio/project.py`, `graph.Graph.context`, `executor.run` | — |

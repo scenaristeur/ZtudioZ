@@ -38,6 +38,8 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
   accepte le repli Pollinations (`flux` sans référence puis `gptimage`, `wan-fast` avec
   image), puis relance avec `--fallback pollinations`. Ne bascule jamais sans réponse.
 - Montre toujours le `run_id`, le statut, la gate et les chemins d'artefacts.
+- Pour inspecter un ancien projet v1, utiliser `studio v1 list|status|files --projects-root
+  /home/smag/dev/ZtudioZ/projets` : lecture seule, jamais d'écriture dans `projets/`.
 - `retry` avec `--feedback` crée une nouvelle version : recopie exactement la correction humaine.
 - Si `status`/`next` disent qu'une entrée manque, demande-la à l'humain, ne l'invente pas.
 - Ne modifie pas le code du studio sans accord explicite (règles `AGENTS_CODE.md`).
