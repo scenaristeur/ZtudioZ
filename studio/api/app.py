@@ -21,6 +21,37 @@ from . import service
 logger = logging.getLogger(__name__)
 
 
+def feedback_from_body(body: dict) -> str | dict[int, str]:
+    """`feedback` global ou `feedback_items` par index, jamais les deux."""
+    feedback = body.get("feedback", "")
+    items = body.get("feedback_items", {})
+    if not isinstance(feedback, str):
+        raise ValueError("feedback invalide")
+    if not isinstance(items, dict):
+        raise ValueError("feedback_items invalide: objet {index: texte} attendu")
+    if feedback.strip() and items:
+        raise ValueError(
+            "feedback global et cible melanges: choisir feedback ou feedback_items"
+        )
+    if not items:
+        return feedback
+
+    parsed: dict[int, str] = {}
+    for raw_index, text in items.items():
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"feedback_items[{raw_index!r}]: texte vide")
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"feedback_items: index invalide {raw_index!r}"
+            ) from exc
+        if index < 0:
+            raise ValueError(f"feedback_items: index negatif {index}")
+        parsed[index] = text
+    return parsed
+
+
 def build_executor(project, registry, answers: dict[str, str] | None = None) -> Executor:
     """Meme montage que le CLI : providers et contexte du projet."""
     return Executor(
@@ -156,9 +187,10 @@ def create_app(projects_root: str | Path, registry=None) -> Starlette:
         if not isinstance(body, dict):
             raise HTTPException(400, "corps JSON invalide")
         answer = body.get("answer")
-        feedback = body.get("feedback", "")
-        if not isinstance(feedback, str):
-            raise HTTPException(400, "feedback invalide")
+        try:
+            feedback = feedback_from_body(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
         events = service.events(project)
         gate = service.pending_gate(events, run_id)

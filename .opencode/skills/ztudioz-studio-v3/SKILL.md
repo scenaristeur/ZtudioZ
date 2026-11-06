@@ -239,14 +239,21 @@ chiffre à l'humain à la gate (« le découpage proposait 6 plans, 2 gardés »
 Livrables : `outputs.image[]` = références d'artefacts ; les vraies images sont dans
 `runs/<slug>/artifacts/<hash>.jpg` — ouvres-les, c'est ce que l'humain doit voir à la gate.
 Attention : le verdict du `continuity-checker` voit désormais **les pixels** (Albert
-`gemma-4-31b-it`) et juge chaque contrainte `freeform` (`respected`/`evidence`). Il reste un
-avis : c'est l'humain qui tranche à `gate_verdict`. Si le verdict n'est pas convaincant,
-`retry` + feedback sur `gate_verdict` régénère les images **et** rejoue le contrôleur.
+`gemma-4-31b-it`) et juge **plan par plan** (`shots` : `index` 0-based, `ok`, `notes`,
+`issues`), en plus des contraintes `freeform` (`respected`/`evidence`). Un seul plan
+fautif interdit `ok=true`. Il reste un avis : c'est l'humain qui tranche à
+`gate_verdict`. Le CLI affiche chaque plan et propose une commande ciblée
+`--feedback-item gate_verdict#<index>=...` ; ne l'exécute que si l'humain a validé la
+correction de ces plans. L'UI expose la même chose : une zone par plan fautif
+(« Recommencer les plans fautifs ») et une zone globale.
+
 Sans feedback, un `retry` de foreach ne rejoue que les items en échec : les items déjà
 réussis restent en cache et ne sont pas repayés. Avec feedback global (`--feedback
 gate=texte`), tout le fan-out est rejoué. Pour ne corriger qu'un item, utiliser
 `--feedback-item gate#index=texte` (répétable) : seuls les items visés et les items en
-échec sont rejoués, et la correction n'est injectée que dans les items visés.
+échec sont rejoués, et la correction n'est injectée que dans les items visés. Ne jamais
+mélanger `--feedback` et `--feedback-item` pour la même gate (l'API refuse
+`feedback` + `feedback_items`).
 
 ### M2 — plans -> vidéos -> gate -> montage -> gate -> ffprobe
 

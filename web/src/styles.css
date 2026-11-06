@@ -421,6 +421,18 @@ h2 {
   color: var(--red);
 }
 
+.verdict .issues {
+  grid-column: 1 / -1;
+  margin: 2px 0 0 24px;
+  gap: 2px;
+}
+
+.verdict .issues li {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .next-step {
   margin: 18px 0 24px;
   padding: 16px;
@@ -516,6 +528,45 @@ h2 {
 .gate-feedback label {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.shot-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed rgba(224, 168, 0, 0.25);
+}
+
+.shot-feedback .shot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(224, 85, 85, 0.35);
+  background: rgba(224, 85, 85, 0.06);
+}
+
+.shot-feedback .shot-title {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.shot-feedback .shot small {
+  color: var(--muted);
+}
+
+.shot-feedback textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #0a0c10;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
 }
 
 .gate-feedback textarea {

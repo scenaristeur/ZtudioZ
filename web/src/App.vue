@@ -167,7 +167,30 @@
           </div>
 
           <div v-if="graph.gate.options.includes('retry')" class="gate-feedback">
-            <label for="gate-feedback">Corriger et creer une nouvelle version</label>
+            <div v-if="targetedShots.length" class="shot-feedback">
+              <label>Corriger seulement les plans fautifs</label>
+              <div v-for="shot in targetedShots" :key="shot.index" class="shot">
+                <span class="shot-title">Plan {{ shot.index + 1 }}</span>
+                <small v-if="shot.notes">{{ shot.notes }}</small>
+                <textarea
+                  v-model="shotFeedback[shot.index]"
+                  rows="2"
+                  :placeholder="shot.issues.join(' ; ') || 'Ce qui doit changer sur ce plan...'"
+                ></textarea>
+              </div>
+              <button
+                class="retry"
+                :disabled="busy || !targetedReady"
+                @click="answer('retry', targetedItems)"
+              >
+                Recommencer les plans fautifs
+              </button>
+              <span class="muted small">
+                Les autres plans sont conserves : seuls les plans corriges sont rejoues.
+              </span>
+            </div>
+
+            <label for="gate-feedback">Correction globale (tous les plans)</label>
             <textarea
               id="gate-feedback"
               v-model="feedback"
@@ -220,6 +243,8 @@ const journal = ref([])
 const error = ref('')
 const busy = ref(false)
 const feedback = ref('')
+const verdict = ref(null)
+const shotFeedback = ref({})
 const next = ref(null)
 const nextInputs = ref({})
 let timer = null
@@ -238,6 +263,21 @@ const retryLabel = computed(() =>
     ? 'Recommencer les images avec cette correction'
     : 'Creer une nouvelle version',
 )
+const targetedShots = computed(() => {
+  if (graph.value?.gate?.id !== 'gate_verdict') return []
+  return (verdict.value?.shots || []).filter((shot) => shot.ok === false)
+})
+const targetedReady = computed(() =>
+  targetedShots.value.some((shot) => (shotFeedback.value[shot.index] || '').trim()),
+)
+const targetedItems = computed(() => {
+  const items = {}
+  for (const shot of targetedShots.value) {
+    const text = (shotFeedback.value[shot.index] || '').trim()
+    if (text) items[shot.index] = text
+  }
+  return items
+})
 const nodes = computed(() =>
   Object.fromEntries((graph.value?.nodes || []).map((node) => [node.id, node])),
 )
@@ -330,18 +370,17 @@ function selectRun(runId) {
   load()
 }
 
-async function answer(option) {
+async function answer(option, items = null) {
   if (!graph.value?.gate) return
   busy.value = true
   try {
-    await api.answer(
-      slug.value,
-      selectedRun.value,
-      graph.value.gate.id,
-      option,
-      option === 'retry' ? feedback.value : '',
-    )
+    await api.answer(slug.value, selectedRun.value, graph.value.gate.id, option, {
+      feedback: option === 'retry' && !items ? feedback.value : '',
+      feedbackItems: option === 'retry' ? items : null,
+    })
     feedback.value = ''
+    shotFeedback.value = {}
+    verdict.value = null
     await load()
   } catch (exc) {
     error.value = exc.message
@@ -354,13 +393,24 @@ function optionLabel(option) {
   return { continue: 'Continuer', retry: 'Nouvelle version', stop: 'Arreter' }[option] || option
 }
 
-function onVerdict(verdict) {
-  if (!verdict || graph.value?.gate?.id !== 'gate_verdict' || feedback.value.trim()) return
-  const lines = []
-  if (verdict.notes) {
-    lines.push(Array.isArray(verdict.notes) ? verdict.notes.join(' ') : verdict.notes)
+function onVerdict(value) {
+  if (!value || graph.value?.gate?.id !== 'gate_verdict') return
+  verdict.value = value
+
+  const shots = {}
+  for (const shot of value.shots || []) {
+    if (shot.ok !== false) continue
+    const parts = [shot.notes, ...(shot.issues || [])].filter(Boolean)
+    shots[shot.index] = parts.join(' ; ')
   }
-  for (const constraint of verdict.constraints || []) {
+  shotFeedback.value = shots
+
+  if (feedback.value.trim()) return
+  const lines = []
+  if (value.notes) {
+    lines.push(Array.isArray(value.notes) ? value.notes.join(' ') : value.notes)
+  }
+  for (const constraint of value.constraints || []) {
     if (!constraint.respected) {
       lines.push(`- ${constraint.text} : ${constraint.evidence || 'a corriger'}`)
     }

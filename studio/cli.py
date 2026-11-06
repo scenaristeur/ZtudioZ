@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -546,6 +547,7 @@ def cmd_status(args) -> int:
                 for constraint in verdict["violated"]:
                     evidence = constraint.get("evidence") or ""
                     print(f"  x {constraint.get('text', '')} — {evidence}")
+                _print_shots(verdict)
             for line in _guidance(project, current["run_id"], gate["id"], verdict):
                 print(line)
         else:
@@ -629,7 +631,28 @@ def _verdict_summary(executor: Executor, run_id: str) -> dict | None:
         for constraint in (verdict.get("constraints") or [])
         if isinstance(constraint, dict) and not constraint.get("respected")
     ]
-    return {"ok": bool(verdict.get("ok")), "notes": notes or "", "violated": violated}
+    shots = []
+    for shot in verdict.get("shots") or []:
+        if not isinstance(shot, dict) or not isinstance(shot.get("index"), int):
+            continue
+        shots.append(
+            {
+                "index": shot["index"],
+                "ok": bool(shot.get("ok")),
+                "notes": str(shot.get("notes") or ""),
+                "issues": [
+                    str(issue)
+                    for issue in (shot.get("issues") or [])
+                    if str(issue).strip()
+                ],
+            }
+        )
+    return {
+        "ok": bool(verdict.get("ok")),
+        "notes": notes or "",
+        "violated": violated,
+        "shots": shots,
+    }
 
 
 def _suggest_feedback(verdict: dict) -> str:
@@ -642,6 +665,51 @@ def _suggest_feedback(verdict: dict) -> str:
     return " ".join(parts)
 
 
+def _targeted_feedback(verdict: dict) -> list[tuple[int, str]]:
+    """Plans fautifs -> corrections par index de fan-out (0-based)."""
+    items = []
+    for shot in verdict.get("shots") or []:
+        if shot.get("ok"):
+            continue
+        parts = [shot.get("notes") or "", *(shot.get("issues") or [])]
+        text = " ; ".join(part for part in parts if part)
+        if text:
+            items.append((shot["index"], text))
+    return items
+
+
+def _targeted_answer_command(
+    project: Project | None, run_id: str, gate: str, items: list[tuple[int, str]]
+) -> str | None:
+    if project is None:
+        return None
+    command = [
+        ".venv/bin/python",
+        "-m",
+        "studio.cli",
+        "--project",
+        str(project.root),
+        "answer",
+        run_id,
+        gate,
+        "retry",
+    ]
+    for index, text in items:
+        command += ["--feedback-item", f"{gate}#{index}={text}"]
+    return " ".join(shlex.quote(part) for part in command)
+
+
+def _print_shots(verdict: dict) -> None:
+    for shot in verdict.get("shots") or []:
+        label = f"plan {shot['index'] + 1} (index {shot['index']})"
+        if shot["ok"]:
+            print(f"  {label}: ok")
+            continue
+        print(f"  {label}: a corriger — {shot['notes']}")
+        for issue in shot["issues"]:
+            print(f"    x {issue}")
+
+
 def _guidance(
     project: Project | None, run_id: str, gate: str, verdict: dict | None
 ) -> list[str]:
@@ -650,6 +718,16 @@ def _guidance(
     accept = _answer_command(project, run_id, gate, "continue")
     retry = _answer_command(project, run_id, gate, "retry")
     if verdict is not None and not verdict["ok"]:
+        targeted = _targeted_feedback(verdict)
+        if targeted:
+            command = _targeted_answer_command(project, run_id, gate, targeted)
+            concernes = ", ".join(f"#{index}" for index, _ in targeted)
+            return [
+                f"plans a reprendre: {concernes}",
+                f"prochaine action (ciblee): {command}",
+                f"ou tout reprendre: {retry} \"<correction globale>\"",
+                f"ou accepter:       {accept}",
+            ]
         suggestion = _suggest_feedback(verdict)
         return [
             f"correction proposee: {suggestion}",
@@ -680,6 +758,7 @@ def _print_result(result, executor: Executor, project: Project | None = None) ->
             for constraint in verdict["violated"]:
                 evidence = constraint.get("evidence") or ""
                 print(f"  x {constraint.get('text', '')} — {evidence}")
+            _print_shots(verdict)
         for line in _guidance(project, result.run_id, gate.id, verdict):
             print(line)
         return 3

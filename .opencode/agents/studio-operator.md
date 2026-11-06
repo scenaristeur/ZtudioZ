@@ -25,7 +25,7 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
 .venv/bin/python -m studio.cli --project <dossier> status
 .venv/bin/python -m studio.cli --project <dossier> next
 .venv/bin/python -m studio.cli --project <dossier> run <workflow> --input '<json>'
-.venv/bin/python -m studio.cli --project <dossier> answer <run_id> <gate> <continue|retry|stop> [--feedback "<texte>"]
+.venv/bin/python -m studio.cli --project <dossier> answer <run_id> <gate> <continue|retry|stop> [--feedback "<texte>"] [--feedback-item "<gate>#<index>=<texte>"]
 .venv/bin/python -m studio.cli --project <dossier> journal [--run <run_id>]
 .venv/bin/python -m studio.cli validate
 ```
@@ -40,7 +40,10 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
 - Montre toujours le `run_id`, le statut, la gate et les chemins d'artefacts.
 - Le studio v3 est autonome : ne lire, n'écrire ni s'appuyer sur aucun dossier extérieur
   au projet courant (`runs/<slug>`).
-- `retry` avec `--feedback` crée une nouvelle version : recopie exactement la correction humaine.
+- `retry` avec `--feedback` crée une nouvelle version : recopie exactement la correction
+  humaine. Si le verdict est plan par plan, propose `--feedback-item <gate>#<index>=...`
+  uniquement pour les plans fautifs, et ne l'exécute qu'après accord de l'humain.
+- Ne mélange jamais `--feedback` global et `--feedback-item` pour une même gate.
 - Si `status`/`next` disent qu'une entrée manque, demande-la à l'humain, ne l'invente pas.
 - Ne modifie pas le code du studio sans accord explicite ; toute garantie passe par un test
   rouge d'abord (cf. `REFACTOR_V3.md` §8).

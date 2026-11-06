@@ -9,7 +9,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 259 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 269 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -17,7 +17,9 @@
 > palier suivant, une API Starlette expose projets, runs, journal, artefacts et gates, et une
 > UI Vue 3 pilotée par le graphe affiche l'état du run et répond aux gates. **D29, D23 et
 > D26 sont clos** : nœuds stricts, contrôleur multimodal Albert (`gemma-4-31b-it`), contraintes
-> freeform jugées et cohérence `ok`/`constraints` verrouillée par schéma.
+> freeform jugées et cohérence `ok`/`constraints` verrouillée par schéma. Le verdict est
+> désormais **plan par plan** (`shots`) et une correction peut cibler les seuls plans fautifs,
+> depuis le CLI (`--feedback-item`) comme depuis l'API (`feedback_items`) et l'UI.
 > **Décideur** : l'humain (super-décideur).
 > **Date de décision** : 2026-10-31.
 > **Branche** : `studio-v3`, **orpheline**, dépôt autonome `/home/smag/dev/ZtudioZ-v3`.
@@ -454,7 +456,7 @@ Chaque palier est démontrable et se termine par une validation humaine.
 | **M1** scénario + photos | artefacts typés + binaires, adaptateur image, vérif vision, gate sur images, invalidation par lignée | 3 shots + 3 images avec refs ; verdict vision ; coût journalisé ; 2ᵉ run = cache hit ; changement de ref → invalidation aval **uniquement** | tests 0 / run réel sur demande | **réalisé ; run réel 2026-11-05 : brief contraint (max 2 plans) → 2 plans → 2 images JPEG, 57 s** |
 | **M2** assets + montage | `ToolAgent` (ffmpeg), dispatch des outils, `on_item_failure`, sous-workflows, `retry` de gate ; puis `VideoAgent` et workflow `m2-video` | `ffprobe` conforme ; montage reproductible ; échec d'un item n'arrête pas le run ; **vraies vidéos générées avant le montage** | 0 en mock / run réel sur demande | **réalisé, 80 tests verts** ; run réel 2026-11-05 : 2 images → 2 vidéos `wan-fast` 512×512 de 5,03 s → montage 10,06 s, **0,10 $**, gate avant dépense |
 | **M3** providers + web | adaptateurs providers, routes, UI pilotée par le graphe, autonomie complète | un projet réel avance d'un palier à l'autre depuis la CLI et depuis le web | selon run | **en cours — tranches 1 à 5 livrées ; clôture D10/D11 à faire** |
-| **M4** production | reprise des acquis : cohérence refs, double-ancre, keyframes, budget, rapports | un plan produit et vérifié par vision, sans régression de cohérence | selon run | **en cours — D23 (vision réelle) et D26 (freeform) livrés** |
+| **M4** production | reprise des acquis : cohérence refs, double-ancre, keyframes, budget, rapports | un plan produit et vérifié par vision, sans régression de cohérence | selon run | **en cours — D23 (vision réelle), D26 (freeform), verdict plan par plan et retry ciblé CLI/API/UI livrés** |
 
 Tout le runtime est **autonome** : aucun fichier, chemin ou environnement extérieur n'est
 requis pour valider, lancer ou reprendre un run.
@@ -713,6 +715,21 @@ Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `gemma-4-31b-it` d�
 avec `constraints: [{text: "pas de dialogue", respected: true, evidence: "aucune bulle..."}]`.
 Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 
+Tests ajoutés pour le verdict plan par plan (M4) — **+10 tests, 269 verts** :
+
+| Test | Tests | Garantie |
+|---|---|---|
+| `test_verdict_shots.py` (contrat) | 3 | le prompt `continuity-checker` v10 exige un jugement par plan (`index`, `ok`, `notes`, `issues`), le schéma accepte un verdict par plan, et refuse `ok=true` dès qu'un plan est fautif |
+| `test_verdict_shots.py` (schéma) | 1 | un `index` négatif ou un champ inconnu est refusé |
+| `test_verdict_shots.py` (moteur) | 1 | M1 produit le verdict par plan, l'index et les écarts remontent dans le résumé CLI, et les plans arrivent au contrôleur |
+| `test_verdict_shots.py` (guidance) | 1 | le CLI propose `--feedback-item gate_verdict#<index>=...` uniquement pour les plans fautifs |
+| `test_api_feedback.py` | 4 | `feedback_items` accepté seul (clés converties en entiers), refusé mélangé à `feedback`, index non entier/négatif ou texte vide → 400 ; un retry ciblé rejoue les plans visés et journalise `gate_retry.feedback = {"1": ...}` |
+
+L'UI applique la même règle : à `gate_verdict`, chaque plan fautif reçoit sa propre zone de
+correction et le bouton « Recommencer les plans fautifs » envoie `feedback_items` ; la zone
+globale reste disponible pour une correction qui concerne tous les plans. Les deux ne sont
+jamais envoyés ensemble.
+
 ---
 
 ## 9. Garde-fous
@@ -882,7 +899,9 @@ condition de :
 | 2026-11-06 | références | **Images de référence** : le provider Pollinations accepte `references` (liste), utilise `gen.pollinations.ai` + `gptimage` pour une référence (`image=URL`) et le POST `/v1/images/generations` pour le multi-ref. `strict_refs` empêche de perdre silencieusement l'ancre. L'exécuteur collecte toutes les images référencées. `madmax-2208` passe à `ref_model: gptimage` ; verdict réel : image 2 corrigée, image 1 encore à reprendre | assistant |
 | 2026-11-05 | opencode | **Pilotage depuis opencode** : agent `studio-operator` + commandes `/studio-status`, `/studio-next`, `/studio-run`, `/studio-answer`, `/studio-journal`, `/studio-validate`. Nouvelle commande CLI `answer <run_id> <gate> <choix>` qui relit workflow et entrées du journal (pas besoin de reconstruire `--input`). 2 tests, **217 verts** | assistant |
 | 2026-11-05 | D26 | **Freeform vérifiable.** Le verdict porte `constraints` (`text`, `respected`, `evidence`) ; le schéma interdit `ok=true` si une contrainte est `respected=false`. Prompt v6 exige une entrée par contrainte freeform. 4 tests. **Vérifié en réel** : Albert rend `ok=false` argumenté et `{"text":"pas de dialogue","respected":true,"evidence":"aucune bulle..."}` | assistant |
-| 2026-11-06 | autonomie | **Le studio v3 devient autonome.** Le pont lecture seule vers les projets externes est retiré ; plus aucun test, skill, agent ou document de travail ne pointe vers un dossier ou un environnement du projet d'origine. Les acquis utiles (bible, références, keyframes) restent, réécrits et testés dans `studio/`. D22 clos comme hors périmètre | humain + assistant |
+| 2026-11-06 | autonomie | **Le studio v3 devient autonome.** Le pont lecture seule vers les projets externes est retiré ; plus aucun test, skill, agent ou code ne lit un dossier ou un environnement du projet d'origine. Les acquis utiles (bible, références, keyframes) restent, réécrits et testés dans `studio/`. D22 clos comme hors périmètre. La source v1 reste citée dans ce document comme **référence documentaire** tant que la refonte n'est pas terminée (D31) | humain + assistant |
+| 2026-11-06 | M4 | **Verdict plan par plan.** `continuity-checker` v10 rend un jugement par image de plan (`index` 0-based, `ok`, `notes`, `issues`) en le comparant au plan et aux planches de la bible. Le schéma interdit `ok=true` dès qu'un plan est fautif. Le CLI affiche les plans et propose une correction ciblée. 6 tests | assistant |
+| 2026-11-06 | API/UI | **Retry ciblé de bout en bout.** L'API accepte `feedback_items: {index: texte}` (jamais mélangé à `feedback`), le journal conserve `gate_retry.feedback`, et l'UI propose une zone par plan fautif plus une correction globale. 4 tests API, build Vite reconstruit. **269 verts**, `validate` OK | assistant |
 
 ---
 
@@ -893,7 +912,7 @@ empêche de croire que le noyau est fini. Clos : D1–D3 (M1), D4–D9, D13, D17
 D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp), D23 (vision
 réelle), D24 (contraintes transportées et bornées), D26 (freeform vérifiable), D27 (schéma
 des plans), D28 (contexte du verdict), D29 (nœuds stricts et ancre préservée), D22 (hors
-périmètre : v3 autonome).
+périmètre : v3 autonome), D31 (autonomie du code, source documentaire conservée).
 Restent ouverts : D10, D11, D12, D16, D20, D21, D30.
 
 | # | Écart | Où le voir | À traiter |
@@ -928,6 +947,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D30.
 | D28 | **Le `continuity-checker` est affamé** : il ne déclare que `images` en entrée et le nœud `verdict` ne dépend que de `images` + la gate. Il ne reçoit ni `shots`, ni `reference`, ni `brief`, donc son verdict est structurellement vide : `ok=false`, « impossible d'évaluer, fournissez le brief ». Distinct de D23 (absence de pixels) : même comme proxy texte il n'a rien à comparer | `catalog/agents/continuity-checker.yamlld`, `workflows/m1-scene.yamlld` (nœud `verdict`) | **clos** : `shots` (requis) et `brief` (optionnel) entrent dans l'agent, `verdict` dépend de `shots` ; 7 tests, vérifié en réel (`ok=true`, constats sourcés « d'après les prompts ») |
 | ~~D29~~ | ~~Pas de mapping d'entrées au niveau du nœud~~ | **clos (fail fast)** : `inputs:`/`outputs:` retires de `NODE_KEYS`, un nœud qui les declare est refuse au chargement. La collision `reference` est supprimee : `reference-keeper` sort `reference_image`, l'ancre texte `reference` reste intacte et arrive au contrôleur | `graph.NODE_KEYS`, `catalog/agents/reference-keeper.yamlld`, `image-creator.yamlld` | — |
 | D30 | **La vidéo réelle dépend d'un tiers et d'un export** : Pollinations exige une image publiquement joignable, donc `tmpfiles.org` reçoit chaque image de plan (URL 48 h) ; aucun chemin local (serveur Agnes `:8765` absent). La génération part d'une image 256 px et sort en 512 : upscale assumé. Le coût (~0,01 $/s) est estimé et journalisé, jamais réconcilié avec la facture réelle | `tools/video.py` (`_upload_public`), `catalog/agents/video-maker.yamlld` | **décision 2026-11-05 : tmpfiles accepté pour les runs réels** ; stockage maîtrisé et réconciliation des coûts repoussés à M4 |
+| ~~D31~~ | ~~Le code dépend encore de la source v1~~ | **clos (2026-11-06)** : le code, les tests, le SKILL et l'agent ne lisent plus aucun dossier, fichier ou environnement du projet d'origine. La source (`main @ 4311be5`) reste citée dans ce document comme **référence documentaire** tant que la refonte n'est pas terminée, sans effet à l'exécution | — |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles

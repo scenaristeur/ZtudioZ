@@ -30,9 +30,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ workflow, inputs }),
     }),
-  answer: (slug, runId, gateId, answer, feedback = '') =>
-    request(`/api/projects/${slug}/runs/${runId}/gates/${gateId}`, {
+  answer: (slug, runId, gateId, answer, { feedback = '', feedbackItems = null } = {}) => {
+    const body = { answer }
+    if (feedbackItems) body.feedback_items = feedbackItems
+    else if (feedback) body.feedback = feedback
+    return request(`/api/projects/${slug}/runs/${runId}/gates/${gateId}`, {
       method: 'POST',
-      body: JSON.stringify({ answer, feedback }),
-    }),
+      body: JSON.stringify(body),
+    })
+  },
 }

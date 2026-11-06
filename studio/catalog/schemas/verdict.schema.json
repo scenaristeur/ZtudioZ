@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Verdict vision",
-  "description": "Decision du controleur de continuite sur les images produites.",
+  "description": "Decision du controleur de continuite sur les images produites, plan par plan.",
   "type": "object",
   "required": ["ok", "notes"],
   "additionalProperties": false,
@@ -12,6 +12,24 @@
         {"type": "string"},
         {"type": "array", "items": {"type": "string", "minLength": 1}}
       ]
+    },
+    "shots": {
+      "type": "array",
+      "description": "Un jugement par image de plan, dans l'ordre des plans recus (index 0-based).",
+      "items": {
+        "type": "object",
+        "required": ["index", "ok", "notes"],
+        "additionalProperties": false,
+        "properties": {
+          "index": {"type": "integer", "minimum": 0},
+          "ok": {"type": "boolean"},
+          "notes": {"type": "string", "minLength": 1},
+          "issues": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
     },
     "constraints": {
       "type": "array",
@@ -38,6 +56,23 @@
               "type": "object",
               "required": ["respected"],
               "properties": {"respected": {"const": false}}
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {"ok": {"const": false}}
+      }
+    },
+    {
+      "if": {
+        "required": ["shots"],
+        "properties": {
+          "shots": {
+            "contains": {
+              "type": "object",
+              "required": ["ok"],
+              "properties": {"ok": {"const": false}}
             }
           }
         }
