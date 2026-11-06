@@ -434,6 +434,8 @@ class Executor:
     ) -> Any:
         if str(agent.get("@type", "")).endswith("ImageAgent"):
             return await self._exec_image(node, agent, scope, run_id, unit)
+        if str(agent.get("@type", "")).endswith("KeyframeAgent"):
+            return await self._exec_keyframes(node, agent, scope, run_id, unit)
         if str(agent.get("@type", "")).endswith("VideoAgent"):
             return await self._exec_video(node, agent, scope, run_id, unit)
         if str(agent.get("@type", "")).endswith("ToolAgent"):
@@ -559,6 +561,111 @@ class Executor:
         )
         return produced
 
+    async def _exec_keyframes(
+        self, node: Node, agent: dict, scope: dict[str, Any], run_id: str, unit: str
+    ) -> Any:
+        """KeyframeAgent : un plan -> deux images (debut, fin) qui tiennent le plan.
+
+        Les deux images sont produites et stockees avant toute video : la gate
+        humaine peut les valider, et la video ne sera payee qu'apres. La sortie
+        est une fiche de plan enrichie (`start_image`, `end_image`) directement
+        consommable par un VideoAgent en foreach.
+        """
+        if self.image is None:
+            raise LoadError(
+                f"noeud {node.id}: un KeyframeAgent demande un adaptateur image "
+                "(parametre 'image')"
+            )
+
+        resolved = self._resolve_inputs(agent, scope)
+        cache_key = self.store.key(
+            [node.id, agent["@id"], agent.get("version", 1), agent.get("model", ""),
+             agent.get("prompt", ""), resolved, scope.get("item")]
+        )
+        cached = self.store.cached(cache_key)
+        if cached is not None:
+            self._unit_costs[unit] = 0.0
+            self.journal.append(
+                "node_skipped", run=run_id, node=unit, artifact=cached, reason="cache", cost=0.0
+            )
+            return self.store.get(cached)
+
+        budget = agent.get("budget")
+        cost = float(self.image.estimate()) * 2
+        if budget is not None and cost > float(budget):
+            self.journal.append(
+                "budget_refused", run=run_id, node=unit, cost=cost, budget=float(budget)
+            )
+            raise BudgetError(
+                f"budget depasse pour {node.id}: cout estime {cost} > budget {budget}"
+            )
+
+        references = self._references(resolved)
+        item = resolved.get("item") if isinstance(resolved.get("item"), dict) else {}
+        start_prompt = self._image_prompt(resolved)
+        end_prompt = self._end_frame_prompt(start_prompt, item)
+
+        self.journal.append("node_started", run=run_id, node=unit)
+        async with self._global:
+            start = await self.image.generate(
+                agent_id=agent["@id"],
+                model=agent.get("model", ""),
+                system=self._system(agent),
+                prompt=start_prompt,
+                reference=references[0] if references else None,
+                references=references,
+            )
+            end = await self.image.generate(
+                agent_id=agent["@id"],
+                model=agent.get("model", ""),
+                system=self._system(agent),
+                prompt=end_prompt,
+                reference=references[0] if references else None,
+                references=references,
+            )
+
+        produced = {
+            "start_image": start.ref(),
+            "end_image": end.ref(),
+            "prompt": item.get("prompt") or start_prompt,
+            "motion": item.get("motion") or "",
+            "duration": self._video_duration(resolved),
+        }
+        if "id" in item:
+            produced["id"] = item["id"]
+        self._validate_outputs(node, agent, produced)
+
+        consumed = self._consumed(node, resolved)
+        start_key = self.store.put(start, parents=consumed, producer=agent["@id"], cost=cost / 2)
+        end_key = self.store.put(end, parents=consumed, producer=agent["@id"], cost=cost / 2)
+        artifact = self.store.put(
+            produced,
+            parents=(start_key, end_key, *consumed),
+            producer=agent["@id"],
+            cost=cost,
+        )
+        self.store.remember(cache_key, artifact)
+        self._artifacts[unit] = artifact
+        self._unit_costs[unit] = cost
+        self.journal.append(
+            "node_finished", run=run_id, node=unit, artifact=artifact, cost=cost
+        )
+        return produced
+
+    @staticmethod
+    def _end_frame_prompt(start_prompt: str, item: dict[str, Any]) -> str:
+        """Le plan a la fin du mouvement, sans inventer un autre decor."""
+        explicit = item.get("end_prompt")
+        if isinstance(explicit, str) and explicit.strip():
+            return f"{start_prompt}. {explicit.strip()}"
+        state = item.get("end_state")
+        if isinstance(state, str) and state.strip():
+            return f"{start_prompt}. Fin du plan : {state.strip()}"
+        return (
+            f"{start_prompt}. Derniere image du plan : le mouvement s'acheve, "
+            "meme cadre, meme decor, meme lumiere, meme personnage."
+        )
+
     async def _exec_video(
         self, node: Node, agent: dict, scope: dict[str, Any], run_id: str, unit: str
     ) -> Any:
@@ -596,10 +703,8 @@ class Executor:
                 f"budget depasse pour {node.id}: cout estime {cost} > budget {budget}"
             )
 
-        reference = self._reference(resolved)
-        references = self._references(resolved)
-        if references and reference is None:
-            reference = references[0]
+        references = self._video_references(resolved)
+        reference = references[0] if references else self._reference(resolved)
         self.journal.append("node_started", run=run_id, node=unit)
         async with self._global:
             binary = await self.video.generate(
@@ -849,6 +954,40 @@ class Executor:
                 binary = self.store.get(hash_)
                 if str(getattr(binary, "media_type", "")).startswith("image/"):
                     references.append(binary)
+        return references
+
+    # Ordre des images d'un plan pour la video : la premiere image est le debut,
+    # la seconde la fin (mode keyframes Agnes). Les artefacts JSON sont tries par
+    # cle, donc `end_image` arriverait avant `start_image` sans cette convention.
+    _VIDEO_FRAME_KEYS = (
+        "start_image", "reference_image", "image", "first_frame",
+        "end_image", "last_frame",
+    )
+
+    def _video_references(self, resolved: dict[str, Any]) -> list:
+        """References video dans l'ordre debut -> fin, puis les autres entrees."""
+        explicit = resolved.get("references")
+        if isinstance(explicit, list) and explicit:
+            return self._references({"references": explicit})
+
+        references = []
+        seen = set()
+        item = resolved.get("item")
+        if isinstance(item, dict):
+            for key in self._VIDEO_FRAME_KEYS:
+                if key not in item:
+                    continue
+                for hash_ in self._embedded(item[key]):
+                    if hash_ in seen:
+                        continue
+                    seen.add(hash_)
+                    binary = self.store.get(hash_)
+                    if str(getattr(binary, "media_type", "")).startswith("image/"):
+                        references.append(binary)
+        for binary in self._references(resolved):
+            if binary.hash not in seen:
+                seen.add(binary.hash)
+                references.append(binary)
         return references
 
     def _reference(self, resolved: dict[str, Any]) -> Any:

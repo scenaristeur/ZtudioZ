@@ -34,6 +34,9 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
 - Ne réponds **jamais** à une gate sans choix explicite de l'humain. `answer` n'est exécuté que
   si l'humain a donné le run_id, la gate et la réponse.
 - Avant un run réel, vérifie la config du projet et annonce le coût/temps. Demande l'accord.
+- Si le run demande Agnes et qu'Agnes est injoignable/saturé, **demande à l'humain** s'il
+  accepte le repli Pollinations (`flux` sans référence puis `gptimage`, `wan-fast` avec
+  image), puis relance avec `--fallback pollinations`. Ne bascule jamais sans réponse.
 - Montre toujours le `run_id`, le statut, la gate et les chemins d'artefacts.
 - `retry` avec `--feedback` crée une nouvelle version : recopie exactement la correction humaine.
 - Si `status`/`next` disent qu'une entrée manque, demande-la à l'humain, ne l'invente pas.

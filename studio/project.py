@@ -15,6 +15,7 @@ from typing import Any
 
 import yaml
 
+from .tools.agnes import AgnesImageProvider, AgnesVideoProvider
 from .tools.images import (
     MockImageProvider,
     OpenAICompatImageProvider,
@@ -29,8 +30,8 @@ SLOTS = ("llm", "image", "video")
 
 KINDS = {
     "llm": {"mock", "openai"},
-    "image": {"mock", "pollinations", "openai"},
-    "video": {"mock", "pollinations"},
+    "image": {"mock", "pollinations", "openai", "agnes"},
+    "video": {"mock", "pollinations", "agnes"},
 }
 
 ALLOWED_OPTIONS = {
@@ -42,7 +43,14 @@ ALLOWED_OPTIONS = {
         "ref_base", "ref_model", "multi_ref_model", "strict_refs",
     },
     ("image", "openai"): {"model", "base_url", "api_key_env", "size", "cost"},
+    ("image", "agnes"): {
+        "base_url", "apihub_url", "api_key_env", "size", "compose_model", "cost", "timeout",
+    },
     ("video", "mock"): {"cost_per_second", "delay", "size"},
+    ("video", "agnes"): {
+        "base_url", "width", "height", "duration", "dev", "dev_width", "dev_height",
+        "cost_per_second", "timeout", "poll_interval", "max_retries", "retry_delay",
+    },
     ("video", "pollinations"): {
         "base", "model", "api_key_env", "width", "height", "cost_per_second",
         "max_retries", "timeout",
@@ -128,7 +136,9 @@ class Project:
             ("image", "mock"): MockImageProvider,
             ("image", "pollinations"): PollinationsImageProvider,
             ("image", "openai"): OpenAICompatImageProvider,
+            ("image", "agnes"): AgnesImageProvider,
             ("video", "mock"): MockVideoProvider,
+            ("video", "agnes"): AgnesVideoProvider,
             ("video", "pollinations"): PollinationsVideoProvider,
         }[(slot, config.kind)]
         return builder(**config.options)

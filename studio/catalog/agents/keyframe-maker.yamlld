@@ -1,0 +1,36 @@
+"@context": "studio:context"
+"@id": "studio:agent/keyframe-maker"
+type: studio:KeyframeAgent
+name: Fabricant de keyframes
+description: Genere l'image de debut et l'image de fin d'un plan, dans la coherence de la planche.
+version: 1
+model: mock-image/png
+prompt: |
+  Tu fabriques les deux images cles d'un plan : le debut du mouvement et sa fin.
+  Tu respectes la planche de reference et les contraintes du brief : meme decor,
+  meme lumiere, meme palette, meme epoque, meme personnage. Tu ne changes pas de
+  cadrage entre les deux images au point de rompre le raccord.
+inputs:
+  item:
+    type: object
+    required: true
+  reference:
+    type: string
+  references:
+    type: array
+  brief:
+    type: object
+  feedback:
+    type: string
+outputs:
+  start_image:
+    type: object
+  end_image:
+    type: object
+  prompt:
+    type: string
+  motion:
+    type: string
+  duration:
+    type: number
+budget: 1.00

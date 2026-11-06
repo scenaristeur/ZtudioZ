@@ -149,6 +149,22 @@ export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
   passent par le POST JSON en liste. `flux` seul est texte→image et ignore les pixels.
 - Vidéos : `--video-provider pollinations` (`wan-fast` défaut, ~0,01 $/s ; `grok-video-pro`
   ~0,05 $/s via `STUDIO_VIDEO_MODEL`). Facturé à la seconde, budget refusé avant l'appel.
+- Agnes local (`http://localhost:8765`) : `--image-provider agnes` et
+  `--video-provider agnes`, ou `kind: agnes` dans `studio.yaml`. L'image accepte
+  `reference_image` (image→image) et compose plusieurs références via apihub
+  (`AGNES_API_KEY`). La vidéo accepte 1 image (i2v) ou 2 images (keyframes début/fin,
+  `mode=keyframes`). Une file vidéo pleine (`503 video_queue_full`) est retentée puis
+  expliquée nettement.
+- **Repli Agnes → Pollinations, jamais silencieux** : si Agnes est injoignable ou sature,
+  le CLI demande l'accord humain (`--fallback ask`, défaut), bascule avec
+  `--fallback pollinations`, ou échoue avec `--fallback fail`. En mode non interactif,
+  `ask` n'invente pas la réponse : il faut relancer avec `--fallback pollinations`.
+  Le repli utilise `flux` sans référence, puis `gptimage` dès qu'une référence existe
+  (`strict_refs`), et `wan-fast` avec image pour la vidéo, à coût bas.
+- Keyframes : `studio:workflow/m2-keyframes` génère deux images par plan
+  (`start_image`, `end_image`) via `keyframe-maker`, fait valider `gate_keyframes`,
+  puis lance les vidéos avec les deux références. Aucune vidéo n'est payée avant
+  la validation humaine des keyframes.
 - Vision : le `continuity-checker` utilise `gemma-4-31b-it` (Albert) et reçoit les **pixels**
   des images en `image_url` (data URI), pas seulement des références. Il rend une entrée par
   contrainte `freeform` du brief (`text`, `respected`, `evidence`) ; `ok=true` est refusé par

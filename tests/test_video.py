@@ -133,6 +133,27 @@ def test_deux_videos_reelles_deviennent_un_montage_sonde(tmp_path):
     assert not [e for e in executor.journal.events() if e["type"] == "item_failed"]
 
 
+def test_les_keyframes_arrivent_dans_l_ordre_debut_fin(tmp_path):
+    store = ArtifactStore(tmp_path / "artifacts")
+    start = image_ref(tmp_path, "debut")
+    end = image_ref(tmp_path, "fin")
+    store = ArtifactStore(tmp_path / "artifacts")
+    plan = {
+        "end_image": store.get(end).ref(),
+        "start_image": store.get(start).ref(),
+        "prompt": "Plan : le convoi traverse la tempete.",
+        "motion": "travelling lateral",
+        "duration": DURATION,
+    }
+
+    video = MockVideoProvider()
+    result, _ = run_video(tmp_path, [plan], video)
+
+    assert result.status == "completed", result.error
+    assert video.records[0]["references"] == [start, end]
+    assert video.records[0]["reference"] == start
+
+
 def test_la_video_recoit_le_mouvement_et_l_image_de_reference(tmp_path):
     video = MockVideoProvider()
     result, _ = run_video(tmp_path, [fiche(tmp_path, "a")], video)

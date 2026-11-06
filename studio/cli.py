@@ -24,6 +24,7 @@ from .project import (
     prepare_inputs,
     run_start,
 )
+from .tools.agnes import AgnesImageProvider, AgnesVideoProvider
 from .tools.images import (
     MockImageProvider,
     OpenAICompatImageProvider,
@@ -58,6 +59,9 @@ def _build_image_provider(name: str):
     if name == "pollinations":
         return PollinationsImageProvider(
             model=os.environ.get("STUDIO_IMAGE_MODEL", "flux"),
+            ref_model=os.environ.get("STUDIO_REF_MODEL", "gptimage"),
+            multi_ref_model=os.environ.get("STUDIO_MULTI_REF_MODEL", "gptimage"),
+            strict_refs=os.environ.get("STUDIO_STRICT_REFS", "1") not in ("0", "false", ""),
             width=int(os.environ.get("STUDIO_IMAGE_WIDTH", "512")),
             height=int(os.environ.get("STUDIO_IMAGE_HEIGHT", "512")),
             cost=float(os.environ.get("STUDIO_IMAGE_COST", "0")),
@@ -66,6 +70,12 @@ def _build_image_provider(name: str):
         return OpenAICompatImageProvider(
             model=os.environ.get("STUDIO_IMAGE_MODEL", "gpt-image-1"),
             base_url=os.environ.get("STUDIO_IMAGE_URL", "https://api.openai.com/v1"),
+            cost=float(os.environ.get("STUDIO_IMAGE_COST", "0")),
+        )
+    if name == "agnes":
+        return AgnesImageProvider(
+            base_url=os.environ.get("STUDIO_AGNES_URL", "http://localhost:8765"),
+            size=os.environ.get("STUDIO_AGNES_IMAGE_SIZE", "1152x768"),
             cost=float(os.environ.get("STUDIO_IMAGE_COST", "0")),
         )
     raise SystemExit(f"provider d'images inconnu: {name}")
@@ -83,7 +93,287 @@ def _build_video_provider(name: str):
             height=int(os.environ.get("STUDIO_VIDEO_HEIGHT", "512")),
             cost_per_second=float(os.environ.get("STUDIO_VIDEO_COST", "0.01")),
         )
+    if name == "agnes":
+        return AgnesVideoProvider(
+            base_url=os.environ.get("STUDIO_AGNES_URL", "http://localhost:8765"),
+            width=int(os.environ.get("STUDIO_VIDEO_WIDTH", "1152")),
+            height=int(os.environ.get("STUDIO_VIDEO_HEIGHT", "768")),
+            cost_per_second=float(os.environ.get("STUDIO_VIDEO_COST", "0")),
+            dev=os.environ.get("STUDIO_AGNES_DEV", "1") not in ("0", "false", ""),
+            max_retries=int(os.environ.get("STUDIO_AGNES_VIDEO_RETRIES", "2")),
+            retry_delay=float(os.environ.get("STUDIO_AGNES_VIDEO_RETRY_DELAY", "30")),
+        )
     raise SystemExit(f"provider de videos inconnu: {name}")
+
+
+def _build_fallback_image():
+    """Repli Pollinations : `flux` sans reference, `gptimage` des qu'une reference existe."""
+    import os
+
+    return PollinationsImageProvider(
+        model=os.environ.get("STUDIO_FALLBACK_IMAGE_MODEL", "flux"),
+        ref_model=os.environ.get("STUDIO_FALLBACK_REF_MODEL", "gptimage"),
+        multi_ref_model=os.environ.get("STUDIO_FALLBACK_MULTI_REF_MODEL", "gptimage"),
+        strict_refs=True,
+        width=int(os.environ.get("STUDIO_IMAGE_WIDTH", "512")),
+        height=int(os.environ.get("STUDIO_IMAGE_HEIGHT", "512")),
+        cost=float(os.environ.get("STUDIO_FALLBACK_IMAGE_COST", "0")),
+    )
+
+
+def _build_fallback_video():
+    """Repli Pollinations video : modele a image de reference, cout bas pour tester."""
+    import os
+
+    return PollinationsVideoProvider(
+        model=os.environ.get("STUDIO_FALLBACK_VIDEO_MODEL", "wan-fast"),
+        width=int(os.environ.get("STUDIO_VIDEO_WIDTH", "512")),
+        height=int(os.environ.get("STUDIO_VIDEO_HEIGHT", "512")),
+        cost_per_second=float(os.environ.get("STUDIO_FALLBACK_VIDEO_COST", "0")),
+    )
+
+
+def _agnes_health(base_url: str, timeout: float = 2.0) -> tuple[bool, str]:
+    """Agnes repond-il ? Ne teste pas la file video, qui n'a pas d'endpoint public."""
+    import urllib.error
+    import urllib.request
+
+    url = f"{base_url.rstrip('/')}/api/health"
+    try:
+        request = urllib.request.Request(url, headers={"User-Agent": "ztudioz-studio/0.1"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return False, str(exc)
+    if payload.get("ok"):
+        return True, "sain"
+    return False, json.dumps(payload, ensure_ascii=False)[:200]
+
+
+def _ask_yes_no(question: str) -> bool:
+    try:
+        answer = input(question).strip().lower()
+    except EOFError:
+        return False
+    return answer in ("o", "oui", "y", "yes")
+
+
+def _fallback_allowed(
+    policy: str,
+    reason: str,
+    *,
+    ask=None,
+    interactive: bool | None = None,
+) -> bool:
+    """Decision humaine, jamais automatique : ask | pollinations | fail."""
+    if policy == "pollinations":
+        return True
+    if policy == "fail":
+        return False
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    if not interactive:
+        return False
+    ask = ask or _ask_yes_no
+    print(f"AGNES INDISPONIBLE: {reason}", file=sys.stderr)
+    return ask(
+        "Generer sur Pollinations a la place ? "
+        "(images: flux sans reference puis gptimage ; videos: wan-fast avec image) [o/N] "
+    )
+
+
+def _workflow_slots(registry, workflow_id: str) -> set[str]:
+    """Quels adaptateurs (image/video) ce workflow utilise reellement."""
+    slots: set[str] = set()
+    for raw in (registry.workflow(workflow_id).get("nodes") or []):
+        ref = raw.get("agent")
+        if not ref:
+            continue
+        try:
+            agent = registry.agent(registry.resolve(ref))
+        except StudioError:
+            continue
+        kind = str(agent.get("@type", ""))
+        if kind.endswith("ImageAgent") or kind.endswith("KeyframeAgent"):
+            slots.add("image")
+        if kind.endswith("VideoAgent"):
+            slots.add("video")
+    return slots
+
+
+def _project_agnes_url(project: Project | None) -> str:
+    import os
+
+    if project is not None:
+        config = project.providers.get("image")
+        if config is not None and config.kind == "agnes":
+            return str(config.options.get("base_url") or "http://localhost:8765")
+        config = project.providers.get("video")
+        if config is not None and config.kind == "agnes":
+            return str(config.options.get("base_url") or "http://localhost:8765")
+    return os.environ.get("STUDIO_AGNES_URL", "http://localhost:8765")
+
+
+class RuntimeProviders:
+    """Adaptateurs construits pour un run, et slots reellement bascules."""
+
+    def __init__(self, llm, image, video, names: dict[str, str], agnes_slots: set[str], fallback: bool):
+        self.llm = llm
+        self.image = image
+        self.video = video
+        self.names = names
+        self.agnes_slots = agnes_slots
+        self.fallback = fallback
+
+
+def _resolve_runtime_providers(
+    args,
+    project: Project | None,
+    slots: set[str],
+    *,
+    policy: str | None = None,
+    ask=None,
+    interactive: bool | None = None,
+    force_fallback: bool = False,
+) -> RuntimeProviders:
+    """Construit les adaptateurs et demande l'accord humain si Agnes manque."""
+    policy = policy or getattr(args, "fallback", "ask")
+    if project is not None:
+        names = {
+            "llm": getattr(args, "provider", None) or project.providers["llm"].kind,
+            "image": getattr(args, "image_provider", None) or project.providers["image"].kind,
+            "video": getattr(args, "video_provider", None) or project.providers["video"].kind,
+        }
+    else:
+        names = {
+            "llm": getattr(args, "provider", None) or "mock",
+            "image": getattr(args, "image_provider", None) or getattr(args, "provider", None) or "mock",
+            "video": getattr(args, "video_provider", None) or "mock",
+        }
+
+    agnes_slots = {slot for slot in slots if names.get(slot) == "agnes"}
+    fallback = False
+    if agnes_slots and not force_fallback:
+        healthy, detail = _agnes_health(_project_agnes_url(project))
+        if not healthy:
+            reason = (
+                f"le serveur {_project_agnes_url(project)} ne repond pas ({detail}). "
+                "Demarrez Agnes, ou acceptez le repli Pollinations."
+            )
+            if not _fallback_allowed(policy, reason, ask=ask, interactive=interactive):
+                raise StudioError(
+                    "Agnes est injoignable et le repli Pollinations n'a pas ete accepte. "
+                    "Action: demarrer Agnes, ou relancer avec --fallback pollinations, "
+                    "ou --image-provider pollinations --video-provider pollinations."
+                )
+            fallback = True
+    if force_fallback:
+        fallback = True
+
+    fallback_slots = set(agnes_slots) if fallback else set()
+    if fallback:
+        print(
+            "repli Pollinations accepte: images flux sans reference puis gptimage avec "
+            "reference ; videos wan-fast avec image de reference.",
+            file=sys.stderr,
+        )
+
+    llm = (
+        _build_provider(args.provider)
+        if getattr(args, "provider", None)
+        else (project.build("llm") if project is not None else _build_provider("mock"))
+    )
+
+    def build(slot: str):
+        if slot in fallback_slots:
+            return _build_fallback_image() if slot == "image" else _build_fallback_video()
+        override = getattr(args, f"{slot}_provider", None)
+        if override:
+            builder = _build_image_provider if slot == "image" else _build_video_provider
+            return builder(override)
+        if project is not None:
+            return project.build(slot)
+        builder = _build_image_provider if slot == "image" else _build_video_provider
+        return builder(names[slot])
+
+    return RuntimeProviders(
+        llm=llm,
+        image=build("image"),
+        video=build("video"),
+        names=names,
+        agnes_slots=agnes_slots,
+        fallback=fallback,
+    )
+
+
+def _agnes_failure(error: str | None) -> bool:
+    text = (error or "").lower()
+    return "agnes" in text or "video_queue_full" in text
+
+
+def _executor_for(
+    registry,
+    runtime: RuntimeProviders,
+    project: Project | None,
+    runs: Path,
+    answers: dict[str, str] | None = None,
+) -> Executor:
+    return Executor(
+        registry=registry,
+        provider=runtime.llm,
+        store=ArtifactStore(runs / "artifacts"),
+        journal=Journal(runs / "journal.jsonl"),
+        answers=answers,
+        image=runtime.image,
+        video=runtime.video,
+        context=project.context if project is not None else None,
+        bible_root=(project.root / "bible") if project is not None else None,
+    )
+
+
+def _run_with_fallback(
+    registry,
+    runtime: RuntimeProviders,
+    project: Project | None,
+    runs: Path,
+    workflow_id: str,
+    inputs: dict,
+    answers: dict[str, str],
+    feedback: dict[str, str],
+    policy: str,
+):
+    """Execute, puis propose le repli Pollinations si Agnes lache en cours de route."""
+    executor = _executor_for(registry, runtime, project, runs, answers=answers)
+    result = asyncio.run(executor.run(workflow_id, inputs, feedback=feedback))
+    if (
+        result.status == "failed"
+        and runtime.agnes_slots
+        and not runtime.fallback
+        and _agnes_failure(result.error)
+    ):
+        reason = f"Agnes a echoue en cours de run ({result.error})."
+        if _fallback_allowed(policy, reason):
+            runtime = _resolve_runtime_providers(
+                _fallback_args(runtime),
+                project,
+                _workflow_slots(registry, workflow_id),
+                policy=policy,
+                force_fallback=True,
+            )
+            executor = _executor_for(registry, runtime, project, runs, answers=answers)
+            result = asyncio.run(executor.run(workflow_id, inputs, feedback=feedback))
+    return result, executor
+
+
+def _fallback_args(runtime: RuntimeProviders):
+    """Un objet minimal : les providers ont deja ete choisis, on force Pollinations."""
+    import argparse
+
+    return argparse.Namespace(
+        provider=None,
+        image_provider=runtime.names["image"],
+        video_provider=runtime.names["video"],
+    )
 
 
 def _load_project(args) -> Project | None:
@@ -397,37 +687,23 @@ def cmd_run(args) -> int:
             file=sys.stderr,
         )
 
-    if project is not None:
-        provider = _build_provider(args.provider) if args.provider else project.build("llm")
-        image = (
-            _build_image_provider(args.image_provider)
-            if args.image_provider
-            else project.build("image")
-        )
-        video = (
-            _build_video_provider(args.video_provider)
-            if args.video_provider
-            else project.build("video")
-        )
-    else:
-        provider = _build_provider(args.provider or "mock")
-        image = _build_image_provider(args.image_provider or args.provider or "mock")
-        video = _build_video_provider(args.video_provider or "mock")
-
-    executor = Executor(
-        registry=registry,
-        provider=provider,
-        store=ArtifactStore(runs / "artifacts"),
-        journal=Journal(runs / "journal.jsonl"),
-        answers=answers,
-        image=image,
-        video=video,
-        context=project.context if project is not None else None,
-        bible_root=(project.root / "bible") if project is not None else None,
+    runtime = _resolve_runtime_providers(
+        args,
+        project,
+        _workflow_slots(registry, args.workflow),
+        policy=args.fallback,
     )
     try:
-        result = asyncio.run(
-            executor.run(args.workflow, inputs, feedback=feedback)
+        result, executor = _run_with_fallback(
+            registry,
+            runtime,
+            project,
+            runs,
+            args.workflow,
+            inputs,
+            answers,
+            feedback,
+            args.fallback,
         )
     except KeyboardInterrupt:
         # D13 : l'interruption ne casse rien — le journal append-only permet de reprendre
@@ -456,9 +732,24 @@ def cmd_answer(args) -> int:
         print("avertissement: --feedback ignore sans choix retry", file=sys.stderr)
 
     feedback = {args.gate: args.feedback} if args.choice == "retry" else {}
-    executor = _project_executor(project, registry, answers={args.gate: args.choice})
+    runtime = _resolve_runtime_providers(
+        args,
+        project,
+        _workflow_slots(registry, workflow_id),
+        policy=args.fallback,
+    )
     try:
-        result = asyncio.run(executor.run(workflow_id, inputs, feedback=feedback))
+        result, executor = _run_with_fallback(
+            registry,
+            runtime,
+            project,
+            project.root,
+            workflow_id,
+            inputs,
+            {args.gate: args.choice},
+            feedback,
+            args.fallback,
+        )
     except KeyboardInterrupt:
         print("interrompu : relancer la meme commande reprend aux noeuds restants", file=sys.stderr)
         return 130
@@ -550,8 +841,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--feedback", action="append", default=[],
                      help="feedback de correction pour une gate retry (gate=texte)")
     run.add_argument("--provider", default=None, choices=["mock", "openai"])
-    run.add_argument("--image-provider", default=None, choices=["mock", "openai", "pollinations"])
-    run.add_argument("--video-provider", default=None, choices=["mock", "pollinations"])
+    run.add_argument("--image-provider", default=None, choices=["mock", "openai", "pollinations", "agnes"])
+    run.add_argument("--video-provider", default=None, choices=["mock", "pollinations", "agnes"])
+    run.add_argument(
+        "--fallback",
+        default="ask",
+        choices=["ask", "pollinations", "fail"],
+        help="si Agnes manque : demander, basculer Pollinations, ou echouer",
+    )
     run.set_defaults(func=cmd_run)
 
     answer = sub.add_parser("answer", help="repond a une gate d'un run bloque")
@@ -559,6 +856,12 @@ def build_parser() -> argparse.ArgumentParser:
     answer.add_argument("gate")
     answer.add_argument("choice")
     answer.add_argument("--feedback", default="", help="correction si choice=retry")
+    answer.add_argument(
+        "--fallback",
+        default="ask",
+        choices=["ask", "pollinations", "fail"],
+        help="si Agnes manque : demander, basculer Pollinations, ou echouer",
+    )
     answer.set_defaults(func=cmd_answer)
 
     journal = sub.add_parser("journal", help="affiche le journal")
