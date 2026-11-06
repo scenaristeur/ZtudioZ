@@ -131,6 +131,34 @@ def test_next_federe_les_plans_video_depuis_m1(tmp_path):
         assert plan["motion"] == ""
 
 
+def test_m2_demarre_depuis_le_journal_sans_input_plans(tmp_path):
+    root = projet(tmp_path)
+    assert m0(root, "--answer", "gate_brief=continue").returncode == 0
+    assert m1(root, {"reference": REFERENCE}).returncode == 0
+
+    launched = cli(
+        root,
+        "run",
+        "studio:workflow/m2-video",
+        "--answer",
+        "gate_storyboard=continue",
+        "--answer",
+        "gate_videos=continue",
+        "--answer",
+        "gate_montage=continue",
+    )
+
+    assert launched.returncode == 0, launched.stdout + launched.stderr
+    started = [
+        e
+        for e in events(root)
+        if e["type"] == "run_started" and e["workflow"].endswith("m2-video")
+    ]
+    assert started
+    assert len(started[-1]["inputs"]["plans"]) == 1
+    assert started[-1]["inputs"]["plans"][0]["image"]["artifact"]
+
+
 def test_project_memory_lit_les_noeuds_en_cache_et_la_derniere_version(tmp_path):
     store = ArtifactStore(tmp_path / "artifacts")
     old = store.put({"shots": [{"id": 1, "prompt": "vieux"}]})

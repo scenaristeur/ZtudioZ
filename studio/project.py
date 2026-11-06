@@ -213,10 +213,13 @@ def prepare_inputs(
         wanted |= set(raw_context)
     else:
         wanted |= {str(name) for name in raw_context}
-    memory = {
-        name: value for name, value in project_memory(project).items() if name in wanted
-    }
+    full_memory = project_memory(project)
+    memory = {name: value for name, value in full_memory.items() if name in wanted}
     inputs = {**memory, **project.context, **explicit}
+    if "plans" in wanted and "plans" not in inputs:
+        plans = plans_from_shots(full_memory.get("shots"), full_memory.get("image"))
+        if plans:
+            inputs["plans"] = plans
     inherited = sorted(set(inputs) - set(explicit) - set(project.context))
     return inputs, inherited
 
@@ -367,12 +370,6 @@ def next_step(project: "Project", registry) -> dict | None:
     workflow = registry.workflow(target)
     graph = registry.graph(target)
     inputs, inherited = prepare_inputs(project, workflow, {})
-    if "plans" in (workflow.get("inputs") or {}) and "plans" not in inputs:
-        memory = project_memory(project)
-        plans = plans_from_shots(memory.get("shots"), memory.get("image"))
-        if plans:
-            inputs["plans"] = plans
-            inherited = sorted(set(inherited) | {"plans"})
     missing = missing_inputs(workflow, graph, inputs)
     return {
         "run_id": current["run_id"],

@@ -9,7 +9,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 280 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 281 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -715,7 +715,7 @@ Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `gemma-4-31b-it` d�
 avec `constraints: [{text: "pas de dialogue", respected: true, evidence: "aucune bulle..."}]`.
 Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 
-Tests ajoutés pour le verdict plan par plan et le retry ciblé (M4) — **+21 tests, 280 verts** :
+Tests ajoutés pour le verdict plan par plan et le retry ciblé (M4) — **+22 tests, 281 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
@@ -731,6 +731,7 @@ Tests ajoutés pour le verdict plan par plan et le retry ciblé (M4) — **+21 t
 | `test_pollinations.py` (kontext) | 1 | `kontext` est accepté comme modèle de référence (`strict_refs`), avec le même POST image→image |
 | `test_project_chain.py` (next) | 1 | `next` fédère les sorties M1 (`shots` + `image`) en `plans` M2 : chaque fiche porte l'image, le prompt, `motion` et `duration`, sans entrée manuelle |
 | `test_project_chain.py` (mémoire) | 1 | `project_memory` lit aussi les `node_skipped` (cache hit), ne garde que la dernière version d'un nœud rejoué, et accumule les sorties de foreach (`image`) |
+| `test_project_chain.py` (M2) | 1 | `run studio:workflow/m2-video` depuis le journal, sans `--input plans` : `prepare_inputs` fédère les plans et le run va jusqu'au montage mock |
 
 L'UI applique la même règle : à `gate_verdict`, chaque plan fautif reçoit sa propre zone de
 correction et le bouton « Recommencer les plans fautifs » envoie `feedback_items` ; la zone
@@ -917,7 +918,7 @@ condition de :
 | 2026-11-06 | run réel | **`madmax-2208` débloqué avec `kontext`.** Le safety Azure de `gptimage` rejette la scène (`safety_violations=[violence]`) même avec un feedback neutre. Bascule du projet sur `ref_model: kontext` (FLUX Kontext, gratuit, image→image) : l'image 1 est régénérée sans 400. Verdict plan par plan : plans 2 et 3 `ok`, plan 1 encore fautif (cadrage bas sur les roues absent). `kontext` ajouté à `REF_SUPPORT`, 1 test, **278 verts** | assistant + humain |
 | 2026-11-06 | run réel | **`madmax-2208` : verdict OK.** Retry ciblé `#0` puis `#0+#1` (deux plans rejoués, plan 3 conservé). Le plan 1 montre le cadrage bas sur les roues et le drapeau ; le plan 2 montre le broyage, les étincelles et les observateurs. Le contrôleur rend `ok=true`, plans 1/2/3 `ok`. Run `blocked` à `gate_verdict`, décision humaine en attente (`continue` / `retry` / `stop`) | assistant + humain |
 | 2026-11-06 | run réel | **`madmax-2208` terminé.** Décision humaine `gate_verdict=continue` : statut `completed`, 3 images JPEG, verdict `ok=true`, 3 contraintes freeform `respected=true`. `next` propose `m2-video`, mais réclame une entrée `plans` que M1 ne produit pas telle quelle (`shots` + `image` séparés) : chaînage à trancher (D32). Aucun run vidéo lancé | assistant + humain |
-| 2026-11-06 | D32 | **Chaînage M1 → M2 clos.** `plans_from_shots` fédère `shots[i] + image[i]` en fiches `{id, prompt, image, motion, duration=5}` ; `next_step` les injecte quand le workflow cible déclare `plans`. Corrigé au passage : `project_memory` lisait seulement `node_finished` (les `node_skipped`/cache hits disparaissaient) et empilait les versions successives d'un même nœud. `next` sur `madmax-2208` : `hérite: plans`, `prêt à lancer`. 2 tests, **280 verts** | assistant |
+| 2026-11-06 | D32 | **Chaînage M1 → M2 clos.** `plans_from_shots` fédère `shots[i] + image[i]` en fiches `{id, prompt, image, motion, duration=5}` ; `prepare_inputs` les injecte quand le workflow cible déclare `plans`, donc `next` **et** `run` en profitent. Corrigé au passage : `project_memory` lisait seulement `node_finished` (les `node_skipped`/cache hits disparaissaient) et empilait les versions successives d'un même nœud. `next` sur `madmax-2208` : `hérite: plans`, `prêt à lancer` ; un run M2 mock va jusqu'au montage sans `--input plans`. 3 tests, **281 verts** | assistant |
 
 ---
 
@@ -965,7 +966,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D30.
 | ~~D29~~ | ~~Pas de mapping d'entrées au niveau du nœud~~ | **clos (fail fast)** : `inputs:`/`outputs:` retires de `NODE_KEYS`, un nœud qui les declare est refuse au chargement. La collision `reference` est supprimee : `reference-keeper` sort `reference_image`, l'ancre texte `reference` reste intacte et arrive au contrôleur | `graph.NODE_KEYS`, `catalog/agents/reference-keeper.yamlld`, `image-creator.yamlld` | — |
 | D30 | **La vidéo réelle dépend d'un tiers et d'un export** : Pollinations exige une image publiquement joignable, donc `tmpfiles.org` reçoit chaque image de plan (URL 48 h) ; aucun chemin local (serveur Agnes `:8765` absent). La génération part d'une image 256 px et sort en 512 : upscale assumé. Le coût (~0,01 $/s) est estimé et journalisé, jamais réconcilié avec la facture réelle | `tools/video.py` (`_upload_public`), `catalog/agents/video-maker.yamlld` | **décision 2026-11-05 : tmpfiles accepté pour les runs réels** ; stockage maîtrisé et réconciliation des coûts repoussés à M4 |
 | ~~D31~~ | ~~Le code dépend encore de la source v1~~ | **clos (2026-11-06)** : le code, les tests, le SKILL et l'agent ne lisent plus aucun dossier, fichier ou environnement du projet d'origine. La source (`main @ 4311be5`) reste citée dans ce document comme **référence documentaire** tant que la refonte n'est pas terminée, sans effet à l'exécution | — |
-| ~~D32~~ | ~~Le chaînage M1 → M2 vidéo ne mappe pas les sorties~~ | **clos (2026-11-06)** : `next_step` fédère `shots[i] + image[i]` en fiches `plans` (`prompt`, `image`, `motion`, `duration=5`), et `project_memory` lit désormais les `node_skipped` et la dernière version de chaque nœud. `next` sur `madmax-2208` affiche `hérite: plans` et `prêt à lancer` | `studio/project.py` (`plans_from_shots`, `project_memory`, `next_step`) | — |
+| ~~D32~~ | ~~Le chaînage M1 → M2 vidéo ne mappe pas les sorties~~ | **clos (2026-11-06)** : `prepare_inputs` fédère `shots[i] + image[i]` en fiches `plans` (`prompt`, `image`, `motion`, `duration=5`), donc `next` **et** `run` en profitent ; `project_memory` lit désormais les `node_skipped` et la dernière version de chaque nœud. `next` sur `madmax-2208` affiche `hérite: plans` et `prêt à lancer` | `studio/project.py` (`plans_from_shots`, `project_memory`, `prepare_inputs`) | — |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles
