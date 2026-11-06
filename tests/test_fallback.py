@@ -154,6 +154,20 @@ def test_agnes_sain_reste_le_provider_choisi(tmp_path, monkeypatch):
     assert isinstance(runtime.video, AgnesVideoProvider)
 
 
+def test_parse_feedback_items_cible_un_item():
+    assert cli._parse_feedback_items(
+        ["gate_videos#1=garder le masque beige", "gate_videos#3=plus large"]
+    ) == {"gate_videos": {1: "garder le masque beige", 3: "plus large"}}
+
+
+def test_feedback_global_et_cible_melange_refuse():
+    with pytest.raises(StudioError, match="feedback"):
+        cli._merge_feedback(
+            {"gate_videos": "correction globale"},
+            {"gate_videos": {1: "correction ciblee"}},
+        )
+
+
 def test_un_workflow_sans_video_ne_sonde_pas_agnes_video(tmp_path, monkeypatch):
     project = agnes_project(tmp_path)
     calls = []

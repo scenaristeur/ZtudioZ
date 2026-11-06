@@ -18,6 +18,8 @@ from .graph import Graph, Node
 from .journal import Journal
 from .registry import Registry
 
+Feedback = str | dict[int, str]
+
 
 @dataclass
 class GateRequest:
@@ -84,8 +86,8 @@ class Executor:
         self.image = image
         self.video = video
         self.context = dict(context or {})
-        self.feedback: dict[str, str] = {}
-        self._active_feedback: str | None = None
+        self.feedback: dict[str, Feedback] = {}
+        self._active_feedback: Feedback | None = None
         self._global = asyncio.Semaphore(max_parallel)
         self._artifacts: dict[str, str] = {}
         self._unit_costs: dict[str, float] = {}
@@ -102,7 +104,7 @@ class Executor:
         inputs: dict[str, Any] | None = None,
         answers: dict[str, str] | None = None,
         run_id: str | None = None,
-        feedback: dict[str, str] | None = None,
+        feedback: dict[str, Feedback] | None = None,
     ) -> RunResult:
         """Execute ou reprend un workflow jusqu'a completion, gate ou echec."""
         self.feedback = dict(feedback or {})
@@ -291,7 +293,19 @@ class Executor:
         items, donc tout le fan-out est rejoue.
         """
         targets: set[str] = set()
-        feedback = bool(self._active_feedback)
+        active = self._active_feedback
+        global_feedback = isinstance(active, str) and bool(active.strip())
+        targeted = active if isinstance(active, dict) else {}
+        foreach_deps = [
+            dep
+            for dep in gate.needs
+            if dep in graph.nodes and graph.node(dep).foreach
+        ]
+        if targeted and len(foreach_deps) > 1:
+            raise GateError(
+                f"feedback cible ambigu pour {gate.id}: plusieurs foreach "
+                f"({', '.join(foreach_deps)}), precisez le noeud"
+            )
         for dep in gate.needs:
             hash_ = self._artifacts.get(dep)
             if hash_:
@@ -310,15 +324,28 @@ class Executor:
                     continue
                 if index not in outcomes:
                     failed.add(index)
-            # Sans echec a corriger, retry reste une nouvelle prise de tous les plans.
-            replay_all = feedback or not failed
-            failed_units = {f"{dep}#{index}" for index in failed}
-            units = [
-                unit
-                for unit in self._artifacts
-                if unit.startswith(f"{dep}#")
-                and (replay_all or unit in failed_units)
-            ]
+            # Feedback global : tout le fan-out. Feedback cible : les items cibles
+            # plus les items fautifs (sans feedback). Sans feedback : les fautifs ;
+            # s'il n'y en a aucun, retry reste une nouvelle prise de tous les plans.
+            if global_feedback:
+                replay_all = True
+                replay_indices: set[int] = set()
+            elif targeted:
+                replay_all = False
+                replay_indices = set(failed) | set(targeted)
+            else:
+                replay_all = not failed
+                replay_indices = set()
+            units: list[str] = []
+            for unit in self._artifacts:
+                if not unit.startswith(f"{dep}#"):
+                    continue
+                try:
+                    index = int(unit.split("#", 1)[1])
+                except ValueError:
+                    continue
+                if replay_all or index in replay_indices:
+                    units.append(unit)
             for unit in units:
                 targets |= self.store.invalidate(self._artifacts[unit])
         affected = [
@@ -475,8 +502,13 @@ class Executor:
                 scope[dep] = value
         if extra:
             scope.update(extra)
-        if self._active_feedback:
-            scope["feedback"] = self._active_feedback
+        if self._active_feedback is not None:
+            if isinstance(self._active_feedback, dict):
+                index = (extra or {}).get("index")
+                if index in self._active_feedback:
+                    scope["feedback"] = self._active_feedback[index]
+            else:
+                scope["feedback"] = self._active_feedback
         return scope
 
     async def _exec_agent(

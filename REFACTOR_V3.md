@@ -6,7 +6,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 256 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 260 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -167,7 +167,7 @@ studio/
   web/             UI Vue 3 + Vite pilotee par le graphe (dist servi par l'API)
   cli.py           run | journal | validate | invalidate | serve | --skills-root | --project
   project.py       studio.yaml -> providers + contexte + racine artefacts/journal
-tests/             45 fichiers, 256 tests
+tests/             45 fichiers, 260 tests
 pyproject.toml     dépendances + config pytest
 ```
 
@@ -761,7 +761,7 @@ python3 -m venv .venv && .venv/bin/pip install pytest pyyaml jsonschema pyld
 cd /home/smag/dev/ZtudioZ-v3
 git status --porcelain                 # doit être vide
 git log --oneline -5
-.venv/bin/python -m pytest tests/      # 256 passed
+.venv/bin/python -m pytest tests/      # 260 passed
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -851,6 +851,7 @@ condition de :
 | 2026-11-05 | M1 | **Le verdict n'était pas actionnable** : après `gate_images=continue`, M1 se terminait sur `verdict`, sans gate. Ajout de `gate_verdict` (`needs: [verdict, images]`) : `continue` clôt M1, `retry` + feedback régénère les images **et** rejoue le contrôleur (gemma), puis repose la gate. `continuity-checker` v9 déclare `feedback`. 1 test ajouté, **207 verts** | assistant |
 | 2026-11-05 | UI | **Verdict affiché et correction proposée** : à `gate_verdict`, l'UI rend le verdict (ok/notes/contraintes avec preuves) et pré-remplit la zone de correction avec les contraintes violées. Le bouton devient « Recommencer les images avec cette correction » ; `graph.gate.retry` expose l'étape à rejouer (`images`). | assistant |
 | 2026-11-05 | CLI | **CLI fiabilisé** : parsing strict de `--input`/`--answer`/`--feedback`, preflight des entrées requises avant tout appel, erreurs `StudioError` sans traceback, `journal --run`, commandes `next` (palier suivant + entrée manquante) et `status` (dernier run, coût, gate). Les gates déjà franchies ne sont plus reposées lors d'une correction en aval. 8 tests, **215 verts** | assistant |
+| 2026-11-06 | retry | **Feedback cible par item** : `--feedback-item gate#index=texte` (répétable) rejoue uniquement les items visés et les items en échec ; la correction n'est injectée que dans les items visés. Un feedback global (`--feedback`) continue de rejouer tout le fan-out. Mélanger les deux pour une même gate est refusé. 4 tests | assistant |
 | 2026-11-06 | retry | **Retry cible des foreach** : un `retry` de gate sans feedback ne rejoue que les items en echec ; les items reussis restent en cache et ne sont plus repayes. Avec feedback, tout le fan-out est rejoue (la correction s'applique a tous). Sans item fautif, retry reste une nouvelle prise complete. 3 tests | assistant |
 | 2026-11-06 | agnes | **Agnes local + keyframes + repli explicite** : providers `agnes` image/vidéo (`studio/tools/agnes.py`), `m2-keyframes` (deux images début/fin, gate avant vidéo), ordre `start_image`/`end_image` garanti, `503 video_queue_full` retenté puis expliqué. Repli Agnes → Pollinations **sur accord humain** (`--fallback ask|pollinations|fail`) : `flux` sans référence puis `gptimage`, `wan-fast` avec image. 12 tests de repli + 10 tests Agnes/keyframes | assistant |
 | 2026-11-06 | bible | **Bible + sheets intégrées** : `studio/bible.py` lit l'arborescence v1 (`bible/<type>/<slug>/fiche.yaml`, `sheet_<version>.png`), outil `bible.sheets`, agent `sheet-keeper`, entrée `references` de `m1-scene`, CLI `studio bible`. Les planches sont transmises aux ImageAgents et au contrôleur (vision). Références vidéo transmises aussi. 6 tests | assistant |

@@ -339,7 +339,7 @@ def _run_with_fallback(
     workflow_id: str,
     inputs: dict,
     answers: dict[str, str],
-    feedback: dict[str, str],
+    feedback: dict[str, str | dict[int, str]],
     policy: str,
 ):
     """Execute, puis propose le repli Pollinations si Agnes lache en cours de route."""
@@ -374,6 +374,46 @@ def _fallback_args(runtime: RuntimeProviders):
         image_provider=runtime.names["image"],
         video_provider=runtime.names["video"],
     )
+
+
+def _parse_feedback_items(values: list[str]) -> dict[str, dict[int, str]]:
+    """`--feedback-item gate#index=texte` -> {gate: {index: texte}}."""
+    items: dict[str, dict[int, str]] = {}
+    for raw in values:
+        if "=" not in raw:
+            raise StudioError(
+                f"--feedback-item attend gate#index=texte, recu: {raw!r}"
+            )
+        key, text = raw.split("=", 1)
+        if "#" not in key:
+            raise StudioError(
+                f"--feedback-item attend gate#index=texte, recu: {key!r}"
+            )
+        gate, raw_index = key.rsplit("#", 1)
+        gate = gate.strip()
+        try:
+            index = int(raw_index)
+        except ValueError as exc:
+            raise StudioError(
+                f"--feedback-item: index invalide dans {key!r}"
+            ) from exc
+        if not gate or index < 0:
+            raise StudioError(f"--feedback-item invalide: {raw!r}")
+        items.setdefault(gate, {})[index] = text
+    return items
+
+
+def _merge_feedback(
+    global_feedback: dict[str, str],
+    item_feedback: dict[str, dict[int, str]],
+) -> dict[str, str | dict[int, str]]:
+    both = sorted(set(global_feedback) & set(item_feedback))
+    if both:
+        raise StudioError(
+            "feedback global et cible melanges pour la meme gate: "
+            f"{', '.join(both)} ; choisir --feedback (tous) ou --feedback-item (cibles)"
+        )
+    return {**global_feedback, **item_feedback}
 
 
 def _load_project(args) -> Project | None:
@@ -664,7 +704,10 @@ def cmd_run(args) -> int:
     registry = load_registry(args.root, extra_skill_roots=args.skills_root)
     explicit = _parse_input(args.input)
     answers = _parse_pairs(args.answer, "--answer")
-    feedback = _parse_pairs(args.feedback, "--feedback")
+    feedback = _merge_feedback(
+        _parse_pairs(args.feedback, "--feedback"),
+        _parse_feedback_items(args.feedback_item),
+    )
     project = _load_project(args)
     runs = _runs_dir(args, project)
     workflow = registry.workflow(args.workflow)
@@ -730,8 +773,21 @@ def cmd_answer(args) -> int:
         )
     if args.feedback and args.choice != "retry":
         print("avertissement: --feedback ignore sans choix retry", file=sys.stderr)
+    if args.feedback_item and args.choice != "retry":
+        print("avertissement: --feedback-item ignore sans choix retry", file=sys.stderr)
 
-    feedback = {args.gate: args.feedback} if args.choice == "retry" else {}
+    item_feedback = _parse_feedback_items(args.feedback_item)
+    wrong_gate = sorted(gate for gate in item_feedback if gate != args.gate)
+    if wrong_gate:
+        raise StudioError(
+            f"--feedback-item vise {', '.join(wrong_gate)} mais la gate est {args.gate}"
+        )
+    feedback: dict[str, str | dict[int, str]] = {}
+    if args.choice == "retry":
+        feedback = _merge_feedback(
+            {args.gate: args.feedback} if args.feedback else {},
+            item_feedback,
+        )
     runtime = _resolve_runtime_providers(
         args,
         project,
@@ -840,6 +896,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--answer", action="append", default=[])
     run.add_argument("--feedback", action="append", default=[],
                      help="feedback de correction pour une gate retry (gate=texte)")
+    run.add_argument(
+        "--feedback-item",
+        action="append",
+        default=[],
+        help="correction ciblee d'un item (gate#index=texte), rejoue seulement les items vises",
+    )
     run.add_argument("--provider", default=None, choices=["mock", "openai"])
     run.add_argument("--image-provider", default=None, choices=["mock", "openai", "pollinations", "agnes"])
     run.add_argument("--video-provider", default=None, choices=["mock", "pollinations", "agnes"])
@@ -856,6 +918,12 @@ def build_parser() -> argparse.ArgumentParser:
     answer.add_argument("gate")
     answer.add_argument("choice")
     answer.add_argument("--feedback", default="", help="correction si choice=retry")
+    answer.add_argument(
+        "--feedback-item",
+        action="append",
+        default=[],
+        help="correction ciblee d'un item (gate#index=texte), rejoue seulement les items vises",
+    )
     answer.add_argument(
         "--fallback",
         default="ask",

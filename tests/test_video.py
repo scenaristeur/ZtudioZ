@@ -202,6 +202,41 @@ def test_un_retry_sans_echec_rejoue_tous_les_items(tmp_path):
     assert video.calls == 4
 
 
+def test_un_retry_avec_feedback_cible_ne_rejoue_que_les_items_cibles(tmp_path):
+    """Une correction ciblée sur l'item 1 ne doit pas rejouer l'item 0."""
+    video = MockVideoProvider()
+    result, _ = run_video(
+        tmp_path,
+        [fiche(tmp_path, "a"), fiche(tmp_path, "b")],
+        video,
+        answers={"gate_storyboard": "continue", "gate_videos": "retry"},
+        feedback={"gate_videos": {1: "plus de poussiere sur le visage"}},
+    )
+
+    assert result.status == "blocked"
+    assert video.calls == 3, "seul l'item cible doit etre rejoue"
+    assert "plus de poussiere sur le visage" not in video.records[0]["prompt"]
+    assert "plus de poussiere sur le visage" not in video.records[1]["prompt"]
+    assert "plus de poussiere sur le visage" in video.records[2]["prompt"]
+
+
+def test_un_feedback_cible_et_un_item_en_echec_rejoue_les_deux(tmp_path):
+    """L'item cible et l'item fautif sont rejoues ; le feedback ne va qu'au cible."""
+    video = MockVideoProvider(fail_on=2)
+    result, _ = run_video(
+        tmp_path,
+        [fiche(tmp_path, "a"), fiche(tmp_path, "b")],
+        video,
+        answers={"gate_storyboard": "continue", "gate_videos": "retry"},
+        feedback={"gate_videos": {0: "cadrage plus large"}},
+    )
+
+    assert result.status == "blocked"
+    assert video.calls == 4
+    assert "cadrage plus large" in video.records[2]["prompt"]
+    assert "cadrage plus large" not in video.records[3]["prompt"]
+
+
 def test_la_video_recoit_le_mouvement_et_l_image_de_reference(tmp_path):
     video = MockVideoProvider()
     result, _ = run_video(tmp_path, [fiche(tmp_path, "a")], video)

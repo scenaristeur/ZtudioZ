@@ -198,6 +198,15 @@ Le feedback est injecté dans l'étape rejouée et journalisé (`gate_retry.feed
 produit une **nouvelle version**, pas une correction en place. Dans l'UI, c'est la zone de
 texte sous la gate + « Créer une nouvelle version ».
 
+Pour corriger un seul plan d'un foreach (vidéos, images), cibler l'index :
+```bash
+python -m studio.cli --project <dossier> answer <run_id> gate_videos retry \
+  --feedback-item 'gate_videos#1=garder le masque beige et la chemise identiques'
+```
+Seuls l'item `#1` et les items en échec sont rejoués ; les autres restent en cache.
+`--feedback-item` est répétable (`gate#0=...`, `gate#2=...`). Ne pas mélanger avec un
+`--feedback` global pour la même gate.
+
 Après un run terminé, l'UI affiche **« Palier suivant »** : entrées héritées, champs
 manquants (ex. `reference` pour M1) et bouton de lancement. API : `GET /api/projects/<slug>/next`
 et `POST /api/projects/<slug>/runs` (`{"workflow": "...", "inputs": {...}}`). Aucune valeur
@@ -231,7 +240,10 @@ Attention : le verdict du `continuity-checker` voit désormais **les pixels** (A
 avis : c'est l'humain qui tranche à `gate_verdict`. Si le verdict n'est pas convaincant,
 `retry` + feedback sur `gate_verdict` régénère les images **et** rejoue le contrôleur.
 Sans feedback, un `retry` de foreach ne rejoue que les items en échec : les items déjà
-réussis restent en cache et ne sont pas repayés. Avec feedback, tout le fan-out est rejoué.
+réussis restent en cache et ne sont pas repayés. Avec feedback global (`--feedback
+gate=texte`), tout le fan-out est rejoué. Pour ne corriger qu'un item, utiliser
+`--feedback-item gate#index=texte` (répétable) : seuls les items visés et les items en
+échec sont rejoués, et la correction n'est injectée que dans les items visés.
 
 ### M2 — plans -> vidéos -> gate -> montage -> gate -> ffprobe
 
