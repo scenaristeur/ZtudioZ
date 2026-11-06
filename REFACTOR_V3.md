@@ -914,6 +914,7 @@ condition de :
 | 2026-11-06 | reprise | **`answer` reprend un run échoué** : si la gate a été posée puis laissée en attente par un échec, elle reste répondable (`answerable_gate`) ; une gate déjà tranchée ne se rouvre pas. 4 tests, **277 verts**. La même commande de retry ciblé redevient utilisable après un échec | assistant |
 | 2026-11-06 | run réel | **`madmax-2208` débloqué avec `kontext`.** Le safety Azure de `gptimage` rejette la scène (`safety_violations=[violence]`) même avec un feedback neutre. Bascule du projet sur `ref_model: kontext` (FLUX Kontext, gratuit, image→image) : l'image 1 est régénérée sans 400. Verdict plan par plan : plans 2 et 3 `ok`, plan 1 encore fautif (cadrage bas sur les roues absent). `kontext` ajouté à `REF_SUPPORT`, 1 test, **278 verts** | assistant + humain |
 | 2026-11-06 | run réel | **`madmax-2208` : verdict OK.** Retry ciblé `#0` puis `#0+#1` (deux plans rejoués, plan 3 conservé). Le plan 1 montre le cadrage bas sur les roues et le drapeau ; le plan 2 montre le broyage, les étincelles et les observateurs. Le contrôleur rend `ok=true`, plans 1/2/3 `ok`. Run `blocked` à `gate_verdict`, décision humaine en attente (`continue` / `retry` / `stop`) | assistant + humain |
+| 2026-11-06 | run réel | **`madmax-2208` terminé.** Décision humaine `gate_verdict=continue` : statut `completed`, 3 images JPEG, verdict `ok=true`, 3 contraintes freeform `respected=true`. `next` propose `m2-video`, mais réclame une entrée `plans` que M1 ne produit pas telle quelle (`shots` + `image` séparés) : chaînage à trancher (D32). Aucun run vidéo lancé | assistant + humain |
 
 ---
 
@@ -925,7 +926,7 @@ D14 (run réel, texte + images), D15 (`--skills-root`), D19 (dispatch mcp), D23 
 réelle), D24 (contraintes transportées et bornées), D26 (freeform vérifiable), D27 (schéma
 des plans), D28 (contexte du verdict), D29 (nœuds stricts et ancre préservée), D22 (hors
 périmètre : v3 autonome), D31 (autonomie du code, source documentaire conservée).
-Restent ouverts : D10, D11, D12, D16, D20, D21, D30.
+Restent ouverts : D10, D11, D12, D16, D20, D21, D30, D32.
 
 | # | Écart | Où le voir | À traiter |
 |---|---|---|---|
@@ -960,6 +961,7 @@ Restent ouverts : D10, D11, D12, D16, D20, D21, D30.
 | ~~D29~~ | ~~Pas de mapping d'entrées au niveau du nœud~~ | **clos (fail fast)** : `inputs:`/`outputs:` retires de `NODE_KEYS`, un nœud qui les declare est refuse au chargement. La collision `reference` est supprimee : `reference-keeper` sort `reference_image`, l'ancre texte `reference` reste intacte et arrive au contrôleur | `graph.NODE_KEYS`, `catalog/agents/reference-keeper.yamlld`, `image-creator.yamlld` | — |
 | D30 | **La vidéo réelle dépend d'un tiers et d'un export** : Pollinations exige une image publiquement joignable, donc `tmpfiles.org` reçoit chaque image de plan (URL 48 h) ; aucun chemin local (serveur Agnes `:8765` absent). La génération part d'une image 256 px et sort en 512 : upscale assumé. Le coût (~0,01 $/s) est estimé et journalisé, jamais réconcilié avec la facture réelle | `tools/video.py` (`_upload_public`), `catalog/agents/video-maker.yamlld` | **décision 2026-11-05 : tmpfiles accepté pour les runs réels** ; stockage maîtrisé et réconciliation des coûts repoussés à M4 |
 | ~~D31~~ | ~~Le code dépend encore de la source v1~~ | **clos (2026-11-06)** : le code, les tests, le SKILL et l'agent ne lisent plus aucun dossier, fichier ou environnement du projet d'origine. La source (`main @ 4311be5`) reste citée dans ce document comme **référence documentaire** tant que la refonte n'est pas terminée, sans effet à l'exécution | — |
+| D32 | **Le chaînage M1 → M2 vidéo ne mappe pas les sorties** : `next` propose `m2-video`, qui exige `plans`, alors que M1 sort `shots` (prompts) et `image` (références binaires) séparés. Il manque une fédération `shots[i] + image[i] + mouvement/durée` avant la gate storyboard | `studio/project.py` (`NEXT_WORKFLOWS`, `next_step`), `catalog/workflows/m2-video.yamlld` | M4 |
 
 Ce qui, au contraire, est **solide et testé** : validation stricte du YAML-LD (terme, `@id`,
 outil, skill, schéma), graphe (cycles, dépendances et agents morts), niveaux parallèles
