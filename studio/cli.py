@@ -507,7 +507,10 @@ def _current_model(project: Project | None, kind: str) -> str | None:
 def cmd_models(args) -> int:
     """Liste le catalogue live : sante, prix, options, modele courant."""
     project = _load_project(args)
-    kinds = list(models.CATALOG_URLS) if args.kind == "all" else [args.kind]
+    needs = list(getattr(args, "need", []) or [])
+    for need in needs:
+        models.matches_need({}, need)  # valide le besoin avant tout appel reseau
+    kinds = ["all"] if args.kind == "all" else [args.kind]
     sections = []
     for kind in kinds:
         try:
@@ -516,7 +519,12 @@ def cmd_models(args) -> int:
             print(f"{kind}: catalogue indisponible ({exc})", file=sys.stderr)
             continue
         all_rows = [models.normalize(kind, item) for item in raw]
+        categories = models.KIND_CATEGORIES.get(kind)
+        if categories:
+            all_rows = [row for row in all_rows if row["category"] in categories]
         rows = all_rows
+        if needs:
+            rows = [row for row in rows if models.matches_needs(row, needs)]
         if args.search:
             needle = args.search.lower()
             rows = [
@@ -565,6 +573,7 @@ def cmd_models(args) -> int:
                 if row["status"] != "down"
                 and row["name"] != found["name"]
                 and models.suitable(row, kind)
+                and models.matches_needs(row, needs)
             ][:3]
             if alternatives:
                 detail = ", ".join(
@@ -1110,7 +1119,13 @@ def build_parser() -> argparse.ArgumentParser:
         "models", help="liste les modeles Pollinations (sante, prix, options)"
     )
     models_cmd.add_argument(
-        "--kind", default="video", choices=["video", "image", "text", "all"]
+        "--kind", default="video", choices=["video", "image", "text", "audio", "all"]
+    )
+    models_cmd.add_argument(
+        "--need",
+        action="append",
+        default=[],
+        help=f"besoin ponctuel, repetable ({models.NEEDS_HELP})",
     )
     models_cmd.add_argument(
         "--available", action="store_true", help="masque les modeles down"

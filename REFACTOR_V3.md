@@ -9,7 +9,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 290 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 294 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -715,7 +715,7 @@ Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `gemma-4-31b-it` d�
 avec `constraints: [{text: "pas de dialogue", respected: true, evidence: "aucune bulle..."}]`.
 Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 
-Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de modèles (M4) — **+31 tests, 290 verts** :
+Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de modèles (M4) — **+35 tests, 294 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
@@ -732,8 +732,10 @@ Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de
 | `test_project_chain.py` (next) | 1 | `next` fédère les sorties M1 (`shots` + `image`) en `plans` M2 : chaque fiche porte l'image, le prompt, `motion` et `duration`, sans entrée manuelle |
 | `test_project_chain.py` (mémoire) | 1 | `project_memory` lit aussi les `node_skipped` (cache hit), ne garde que la dernière version d'un nœud rejoué, et accumule les sorties de foreach (`image`) |
 | `test_project_chain.py` (M2) | 1 | `run studio:workflow/m2-video` depuis le journal, sans `--input plans` : `prepare_inputs` fédère les plans et le run va jusqu'au montage mock |
-| `test_models.py` (normalisation) | 4 | prix/s, santé, alias et options d'un modèle vidéo ; filtre `available` et `max_price` ; parsing `/v1/models` (forme OpenAI) et `/video/models` |
-| `test_models.py` (CLI) | 4 | `studio models --available` masque les down, affiche prix/s et options ; `--json` scriptable ; `--project` signale le modèle courant down et des alternatives compatibles image+durée |
+| `test_models.py` (normalisation) | 3 | prix selon la clé média (`pollen/s`, `pollen/image`, `pollen/Mtok`), santé, alias et options d'un modèle vidéo ; parsing `/v1/models` (forme OpenAI), `/image/models` et `/video/models` |
+| `test_models.py` (filtres) | 2 | `available` masque les down ; `max_price` borne ; classement prix puis santé |
+| `test_models.py` (besoins) | 4 | `image-plain` vs `image-ref`, `video-ref`, `video-audio`, `speech-to-text`, `text-to-speech`, `vision` ; filtre CLI `--need` ; filtre de catégorie `--kind audio` |
+| `test_models.py` (CLI) | 3 | `--available` masque les down et affiche prix/options ; `--json` scriptable ; `--project` signale le modèle courant down et des alternatives compatibles image+durée |
 | `test_models.py` (compatibilité) | 1 | un remplaçant vidéo doit accepter une image et la durée demandée (exclut audio-only et plans trop longs) |
 
 L'UI applique la même règle : à `gate_verdict`, chaque plan fautif reçoit sa propre zone de
@@ -923,7 +925,7 @@ condition de :
 | 2026-11-06 | run réel | **`madmax-2208` terminé.** Décision humaine `gate_verdict=continue` : statut `completed`, 3 images JPEG, verdict `ok=true`, 3 contraintes freeform `respected=true`. `next` propose `m2-video`, mais réclame une entrée `plans` que M1 ne produit pas telle quelle (`shots` + `image` séparés) : chaînage à trancher (D32). Aucun run vidéo lancé | assistant + humain |
 | 2026-11-06 | D32 | **Chaînage M1 → M2 clos.** `plans_from_shots` fédère `shots[i] + image[i]` en fiches `{id, prompt, image, motion, duration=5}` ; `prepare_inputs` les injecte quand le workflow cible déclare `plans`, donc `next` **et** `run` en profitent. Corrigé au passage : `project_memory` lisait seulement `node_finished` (les `node_skipped`/cache hits disparaissaient) et empilait les versions successives d'un même nœud. `next` sur `madmax-2208` : `hérite: plans`, `prêt à lancer` ; un run M2 mock va jusqu'au montage sans `--input plans`. 3 tests, **281 verts** | assistant |
 | 2026-11-06 | run réel | **M2 `madmax-2208` lancé jusqu'à la gate.** Projet passé à `video: pollinations` (`wan-fast`, 512×512, 0,01 $/s), plans hérités du journal (3 fiches, `duration=5`, mouvement porté par le prompt du plan). Run `8ea7c5928a215648` `blocked` à `gate_storyboard`, **coût 0** : aucune vidéo payée avant la décision humaine (~0,15 $ pour 3×5 s) | assistant + humain |
-| 2026-11-07 | modèles | **Catalogue live des modèles.** `studio models` interroge `/v1/models`, `/image/models`, `/video/models` et affiche santé, `ok%`, prix (`pollen/s`, `pollen/image`, `pollen/Mtok`) et options (durée, refs, modalités, résolutions). Filtres `--available`, `--max-price`, `--search`, `--json`. Avec `--project`, signale le modèle courant et, s'il est down, propose des alternatives **compatibles image + durée**. Vérifié en réel : `wan-fast` down → alternatives `prunaai/p-video` (0,02 $/s), `bytedance/seedance-1-pro-fast` (0,021 $/s), etc. 9 tests, **290 verts** | assistant |
+| 2026-11-07 | modèles | **Catalogue live des modèles.** `studio models` interroge `/v1/models`, `/image/models`, `/video/models` et affiche santé, `ok%`, prix (`pollen/s`, `pollen/image`, `pollen/Mtok`) et options (durée, refs, modalités, résolutions). Filtres `--available`, `--max-price`, `--search`, `--json`, et surtout `--need` (répétable) : `image-plain`, `image-ref`, `video-ref`, `video-audio`, `speech-to-text`, `text-to-speech`, `vision`, `multimodal`, `tool-calling`, etc. Avec `--project`, signale le modèle courant et, s'il est down, propose des alternatives **compatibles besoin + image + durée**. Prix lus selon la clé média réelle (`completionVideoSeconds`, `promptAudioSeconds`, `completionAudioTokens`...). Vérifié en réel : `wan-fast` down → `prunaai/p-video` (0,02 $/s), `seedance-1-pro-fast` (0,021 $/s), STT `whisper` / `mai-transcribe`. 13 tests, **294 verts** | assistant |
 
 ---
 

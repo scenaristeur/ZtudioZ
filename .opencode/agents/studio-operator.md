@@ -39,8 +39,10 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
   accepte le repli Pollinations (`flux` sans référence puis `gptimage`, `wan-fast` avec
   image), puis relance avec `--fallback pollinations`. Ne bascule jamais sans réponse.
 - Si un modèle par défaut est down, modifié ou trop cher, lance
-  `models --kind <video|image|text> --available` (avec `--project`) avant de proposer un
-  remplaçant : montre santé, prix et compatibilité, puis demande l'accord humain.
+  `models --kind <video|image|text|audio|all> --need <besoin> --available` (avec
+  `--project`) avant de proposer un remplaçant : montre santé, prix et compatibilité
+  (`video-ref`, `video-audio`, `image-ref`, `speech-to-text`, etc.), puis demande
+  l'accord humain.
 - Montre toujours le `run_id`, le statut, la gate et les chemins d'artefacts.
 - Le studio v3 est autonome : ne lire, n'écrire ni s'appuyer sur aucun dossier extérieur
   au projet courant (`runs/<slug>`).

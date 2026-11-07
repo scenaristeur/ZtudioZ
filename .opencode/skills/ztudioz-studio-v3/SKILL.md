@@ -83,13 +83,22 @@ Quand un provider par défaut tombe ou change, interroger le catalogue live avan
 
 ```bash
 python -m studio.cli --project runs/<slug> models --kind video --available
-python -m studio.cli --project runs/<slug> models --kind video --max-price 0.03 --json
+python -m studio.cli --project runs/<slug> models --kind video --need video-ref --max-price 0.03
+python -m studio.cli --project runs/<slug> models --kind video --need video-audio
+python -m studio.cli --project runs/<slug> models --kind audio --need speech-to-text
+python -m studio.cli --project runs/<slug> models --kind all --need vision --json
 ```
 
 `models` affiche santé, `ok%`, prix (`pollen/s`, `pollen/image`, `pollen/Mtok`) et options
 (durée, refs, modalités, résolutions), classe par prix puis santé, et signale le modèle
-courant du projet. S'il est `down`, il propose des alternatives **compatibles image + durée**
-(mode image→vidéo). `--kind all` couvre texte, image et vidéo.
+courant du projet. S'il est `down`, il propose des alternatives **compatibles besoin +
+image + durée**.
+
+Besoins (`--need`, répétables, AND) : `text-gen`, `vision`, `multimodal`, `image-gen`,
+`image-plain` (texte→image sans ref), `image-ref` (image→image), `video-gen`,
+`video-plain` (texte→vidéo), `video-ref` (image→vidéo), `video-audio` (vidéo avec son),
+`audio-gen`, `speech-to-text`, `text-to-speech`, `tool-calling`, `reasoning`, `embedding`,
+`3d`. `--kind` vaut `video` (défaut), `image`, `text`, `audio` ou `all`.
 
 ### Bible et références
 
