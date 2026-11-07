@@ -984,6 +984,41 @@ def cmd_answer(args) -> int:
     return _print_result(result, executor, project)
 
 
+def cmd_restore(args) -> int:
+    """Repointe un noeud vers une version anterieure, sans reecrire le journal.
+
+    Le prochain replay repart de cet artefact ; utile quand l'humain prefere une
+    version precedente d'un clip ou d'une image a la derniere generee.
+    """
+    project = _load_project_or_fail(args)
+    events = Journal(project.journal).events()
+    if not any(event.get("run") == args.run_id for event in events):
+        raise StudioError(f"run inconnu: {args.run_id}")
+    store = ArtifactStore(project.artifacts)
+    try:
+        store.get(args.artifact)
+    except Exception as exc:
+        raise StudioError(f"artefact introuvable: {args.artifact}") from exc
+    known = any(
+        event.get("run") == args.run_id
+        and event.get("node") == args.node
+        and event.get("type") in ("node_finished", "node_skipped")
+        for event in events
+    )
+    if not known:
+        raise StudioError(f"noeud inconnu dans ce run: {args.node}")
+    Journal(project.journal).append(
+        "node_finished",
+        run=args.run_id,
+        node=args.node,
+        artifact=args.artifact,
+        cost=0.0,
+        restored=True,
+    )
+    print(f"restaure: {args.node} -> {args.artifact[:12]}")
+    return 0
+
+
 def cmd_invalidate(args) -> int:
     """D17 : purge active par lignee — l'amont est preserve, l'aval se rejouera."""
     project = _load_project(args)
@@ -1150,6 +1185,14 @@ def build_parser() -> argparse.ArgumentParser:
     invalidate = sub.add_parser("invalidate", help="purge le cache d'un artefact et de son aval")
     invalidate.add_argument("hash")
     invalidate.set_defaults(func=cmd_invalidate)
+
+    restore = sub.add_parser(
+        "restore", help="restaure une version anterieure d'un artefact (append-only)"
+    )
+    restore.add_argument("run_id")
+    restore.add_argument("node")
+    restore.add_argument("artifact")
+    restore.set_defaults(func=cmd_restore)
     return parser
 
 

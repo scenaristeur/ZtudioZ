@@ -9,7 +9,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 297 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 300 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -715,7 +715,7 @@ Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `gemma-4-31b-it` d�
 avec `constraints: [{text: "pas de dialogue", respected: true, evidence: "aucune bulle..."}]`.
 Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 
-Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de modèles (M4) — **+38 tests, 297 verts** :
+Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de modèles (M4) — **+41 tests, 300 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
@@ -739,6 +739,7 @@ Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de
 | `test_models.py` (compatibilité) | 1 | un remplaçant vidéo doit accepter une image et la durée demandée (exclut audio-only et plans trop longs) |
 | `test_video.py` (modèle) | 2 | `video-maker` déclare un placeholder `mock/video` ; le modèle vidéo configuré par le projet (`seedance-1-pro-fast`) prime sur le placeholder de l'agent |
 | `test_video.py` (cohérence) | 1 | `video-maker` référence le pack `video-coherence` ; prompt et pack exigent trajectoire, absence de collision, sens du déplacement, marche avant (pas de recul), arrêt sans glissé et destination du plan |
+| `test_restore.py` | 3 | `studio restore` repointe un nœud vers un artefact antérieur sans réécrire le journal ; refuse un nœud absent du run ou un artefact inconnu |
 
 L'UI applique la même règle : à `gate_verdict`, chaque plan fautif reçoit sa propre zone de
 correction et le bouton « Recommencer les plans fautifs » envoie `feedback_items` ; la zone
@@ -932,6 +933,7 @@ condition de :
 | 2026-11-07 | run réel | **3 clips M2 générés** avec `seedance-1-pro-fast` : h264 1248×704, 5,042 s chacun (4,9 / 6,1 / 3,8 Mo), **coût journalisé 0,3153**. Run `8ea7c5928a215648` `blocked` à `gate_videos`, décision humaine en attente (les vidéos ne sont pas jugées par l'assistant) | assistant + humain |
 | 2026-11-07 | cohérence vidéo | **Revue humaine des 3 clips** : trajectoire du véhicule 1 ambiguë (risque de collision), machine 2 dont les roues tournent sans avancer, personnage 3 qui recule. Ajout du pack `video-coherence` (trajectoire, collisions, roues/déplacement, marche avant, continuité) injecté dans `video-maker` v2, et d'une procédure de retry ciblé `gate_videos` dans le skill opérateur. 1 test, **297 verts** | assistant + humain |
 | 2026-11-07 | cohérence vidéo | **Deuxième revue** : clip 1 accepté ; clip 2 encore un glissé en fin de mouvement (roues qui tournent alors que le véhicule est arrêté) ; clip 3 cohérent mais mauvaise destination (le personnage va vers le château au lieu de disparaître derrière la machine). Le pack `video-coherence` précise désormais l'arrêt sans glissé et la destination du plan. Retry ciblé `#1` et `#2` en préparation | assistant + humain |
+| 2026-11-07 | cohérence vidéo | **Troisième revue** : le clip 2 régénéré a changé toute la scène alors que seul le glissé final posait problème ; l'humain préfère la version précédente (`clips#1` = `e20d316015ac2143`). Le clip 3 doit montrer le visage de la pilote avant qu'elle disparaisse derrière la machine. Ajout de `studio restore` (append-only) pour repointe un nœud vers un artefact antérieur ; 3 tests, **300 verts**. Retry ciblé `#2` avec la consigne du visage | assistant + humain |
 
 ---
 

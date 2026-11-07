@@ -28,6 +28,7 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
 .venv/bin/python -m studio.cli --project <dossier> answer <run_id> <gate> <continue|retry|stop> [--feedback "<texte>"] [--feedback-item "<gate>#<index>=<texte>"]
 .venv/bin/python -m studio.cli --project <dossier> journal [--run <run_id>]
 .venv/bin/python -m studio.cli --project <dossier> models --kind video --available
+.venv/bin/python -m studio.cli --project <dossier> restore <run_id> <noeud> <artefact>
 .venv/bin/python -m studio.cli validate
 ```
 

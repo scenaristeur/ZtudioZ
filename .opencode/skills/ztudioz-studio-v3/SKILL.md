@@ -357,9 +357,13 @@ Ne jamais répondre à la place de l'humain : il regarde les mp4 et tranche.
 python -m studio.cli --runs $RUNS journal              # tout l'historique horodaté
 python -m studio.cli --runs $RUNS validate             # le catalogue entier est-il sain ?
 python -m studio.cli --runs $RUNS invalidate <hash>    # purge un artefact + SON aval, rien d'autre
+python -m studio.cli --project <dossier> restore <run_id> <noeud> <artefact>  # revenir a une version anterieure
 python -m studio.cli --skills-root /chemin/vers/packs validate   # packs externes optionnels
 ```
 - `Ctrl-C` en plein run (code 130) : relancer la même commande, ça reprend.
+- `restore` est append-only : il ajoute un `node_finished` qui repointe le nœud vers
+  l'ancien artefact. Utile quand l'humain préfère une version précédente d'un clip ;
+  ensuite un `retry` ciblé ne rejoue que les autres items. Ne jamais réécrire le journal.
 - Les coûts : chaque run affiche « cout journalise » ; budget par agent dans
   `studio/catalog/agents/*.yamlld` (refusé **avant** appel si dépassé).
 
