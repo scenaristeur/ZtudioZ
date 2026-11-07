@@ -325,7 +325,10 @@ Ensuite `gate_montage`, puis `probe`.
 de valider `gate_videos`, vérifier avec l'humain les évidences :
 - trajectoire et direction stables, aucune collision ni intersection impossible ;
 - roues qui tournent dans le sens du déplacement, machine qui avance/recule réellement ;
+- quand le véhicule s'arrête, les roues s'arrêtent : pas de glissé ni de roue sur place ;
 - personnage qui s'éloigne en marchant vers l'avant, pas à reculons ;
+- destination respectée : aller vers l'objet/lieu du plan (ex. derrière la machine),
+  pas vers un autre décor plus visible ;
 - pas de saut, téléportation ou glissement.
 
 Pour corriger un clip, `retry` ciblé sur `gate_videos` (un seul foreach en amont) :

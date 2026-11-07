@@ -17,6 +17,8 @@ negociables, meme si le plan ou la correction les contredit.
 - Les roues tournent dans le sens du deplacement.
 - Une machine qui a des roues doit avancer ou reculer reellement, pas seulement
   faire tourner ses roues sur place.
+- Quand un vehicule s'arrete, ses roues s'arretent aussi : pas de roue qui
+  tourne sur place, pas de glisse du vehicule.
 - La vitesse apparente reste coherente avec le decor et le mouvement de camera.
 
 ## Personnages
@@ -26,6 +28,16 @@ negociables, meme si le plan ou la correction les contredit.
 - Les pas, le buste et les bras restent dans le sens du deplacement.
 - Pas de glissement, de marche arriere involontaire, ni de changement de
   direction sans raison visible.
+
+## Destination et espace
+
+- Respecter la destination du plan : le personnage ou le vehicule va vers
+  l'objet ou le lieu indique (par exemple disparaitre derriere la grosse
+  machine), pas vers un autre decor.
+- La cible, la direction et le point d'arrivee restent ceux du plan, meme si un
+  autre decor est plus visible.
+- Un personnage qui quitte le cadre le fait dans la direction demandee, sans
+  changer de trajectoire au dernier moment.
 
 ## Continuite
 

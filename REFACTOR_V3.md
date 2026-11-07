@@ -738,7 +738,7 @@ Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de
 | `test_models.py` (CLI) | 3 | `--available` masque les down et affiche prix/options ; `--json` scriptable ; `--project` signale le modèle courant down et des alternatives compatibles image+durée |
 | `test_models.py` (compatibilité) | 1 | un remplaçant vidéo doit accepter une image et la durée demandée (exclut audio-only et plans trop longs) |
 | `test_video.py` (modèle) | 2 | `video-maker` déclare un placeholder `mock/video` ; le modèle vidéo configuré par le projet (`seedance-1-pro-fast`) prime sur le placeholder de l'agent |
-| `test_video.py` (cohérence) | 1 | `video-maker` référence le pack `video-coherence` et son prompt exige trajectoire, absence de collision, sens du déplacement, marche avant (pas de recul) |
+| `test_video.py` (cohérence) | 1 | `video-maker` référence le pack `video-coherence` ; prompt et pack exigent trajectoire, absence de collision, sens du déplacement, marche avant (pas de recul), arrêt sans glissé et destination du plan |
 
 L'UI applique la même règle : à `gate_verdict`, chaque plan fautif reçoit sa propre zone de
 correction et le bouton « Recommencer les plans fautifs » envoie `feedback_items` ; la zone
@@ -931,6 +931,7 @@ condition de :
 | 2026-11-07 | M2 vidéo | **Agnes local saturée, puis choix Pollinations.** Agnes répond `503 video_queue_full` (retry 13/15, 720 s) : run arrêté proprement, coût 0. Le run Pollinations précédent avait aussi échoué (`503`, `422 fal.ai`, read timeout). Décision humaine : `bytedance/seedance-1-pro-fast` (~0,021 $/s, ~0,32 $ pour 3×5 s). Corrigé au passage : `video-maker` déclare `mock/video`, donc le modèle du projet prime sur l'ancien `wan-fast` codé dans l'agent. 2 tests, **296 verts** | assistant + humain |
 | 2026-11-07 | run réel | **3 clips M2 générés** avec `seedance-1-pro-fast` : h264 1248×704, 5,042 s chacun (4,9 / 6,1 / 3,8 Mo), **coût journalisé 0,3153**. Run `8ea7c5928a215648` `blocked` à `gate_videos`, décision humaine en attente (les vidéos ne sont pas jugées par l'assistant) | assistant + humain |
 | 2026-11-07 | cohérence vidéo | **Revue humaine des 3 clips** : trajectoire du véhicule 1 ambiguë (risque de collision), machine 2 dont les roues tournent sans avancer, personnage 3 qui recule. Ajout du pack `video-coherence` (trajectoire, collisions, roues/déplacement, marche avant, continuité) injecté dans `video-maker` v2, et d'une procédure de retry ciblé `gate_videos` dans le skill opérateur. 1 test, **297 verts** | assistant + humain |
+| 2026-11-07 | cohérence vidéo | **Deuxième revue** : clip 1 accepté ; clip 2 encore un glissé en fin de mouvement (roues qui tournent alors que le véhicule est arrêté) ; clip 3 cohérent mais mauvaise destination (le personnage va vers le château au lieu de disparaître derrière la machine). Le pack `video-coherence` précise désormais l'arrêt sans glissé et la destination du plan. Retry ciblé `#1` et `#2` en préparation | assistant + humain |
 
 ---
 

@@ -381,7 +381,15 @@ def test_video_maker_porte_les_regles_de_coherence_physique():
         assert term in prompt
 
     pack = registry.skill("video-coherence").lower()
-    for term in ("collision", "trajectoire", "roue", "reculer", "direction"):
+    for term in (
+        "collision",
+        "trajectoire",
+        "roue",
+        "reculer",
+        "direction",
+        "glisse",
+        "destination",
+    ):
         assert term in pack
 
 
