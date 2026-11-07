@@ -79,6 +79,18 @@ dernier run, son coût, ses nœuds et la gate en attente. `bible` liste les enti
 **avant** tout appel : une entrée manquante ou un JSON invalide sort en erreur propre, sans
 traceback.
 
+Quand un provider par défaut tombe ou change, interroger le catalogue live avant de choisir :
+
+```bash
+python -m studio.cli --project runs/<slug> models --kind video --available
+python -m studio.cli --project runs/<slug> models --kind video --max-price 0.03 --json
+```
+
+`models` affiche santé, `ok%`, prix (`pollen/s`, `pollen/image`, `pollen/Mtok`) et options
+(durée, refs, modalités, résolutions), classe par prix puis santé, et signale le modèle
+courant du projet. S'il est `down`, il propose des alternatives **compatibles image + durée**
+(mode image→vidéo). `--kind all` couvre texte, image et vidéo.
+
 ### Bible et références
 
 La bible du projet est lue telle quelle depuis `<projet>/bible/` :

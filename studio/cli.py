@@ -14,6 +14,7 @@ from .kernel.context import short_iri
 from .kernel.errors import LoadError, StudioError
 from .kernel.executor import Executor
 from .kernel.journal import Journal
+from . import models
 from .kernel.registry import STUDIO_ROOT, load_registry
 from .project import (
     Project,
@@ -490,6 +491,88 @@ def _print_next(project: Project, registry) -> dict | None:
             f"{project.root} run {step['workflow']}"
         )
     return step
+
+
+SLOT_FOR_KIND = {"text": "llm", "image": "image", "video": "video"}
+
+
+def _current_model(project: Project | None, kind: str) -> str | None:
+    slot = SLOT_FOR_KIND.get(kind)
+    if project is None or slot is None:
+        return None
+    provider = project.providers.get(slot)
+    return provider.options.get("model") if provider is not None else None
+
+
+def cmd_models(args) -> int:
+    """Liste le catalogue live : sante, prix, options, modele courant."""
+    project = _load_project(args)
+    kinds = list(models.CATALOG_URLS) if args.kind == "all" else [args.kind]
+    sections = []
+    for kind in kinds:
+        try:
+            raw = models.fetch_models(kind)
+        except Exception as exc:
+            print(f"{kind}: catalogue indisponible ({exc})", file=sys.stderr)
+            continue
+        all_rows = [models.normalize(kind, item) for item in raw]
+        rows = all_rows
+        if args.search:
+            needle = args.search.lower()
+            rows = [
+                row
+                for row in rows
+                if needle in row["name"].lower()
+                or needle in row["title"].lower()
+                or any(needle in alias.lower() for alias in row["aliases"])
+            ]
+        rows = models.ranked(rows, available=args.available, max_price=args.max_price)
+        sections.append((kind, all_rows, rows))
+
+    if args.json:
+        payload = {
+            "models": [
+                {"kind": kind, **row}
+                for kind, _, rows in sections
+                for row in rows
+            ]
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    for kind, all_rows, rows in sections:
+        print(f"{kind}:")
+        if not rows:
+            print("  aucun modele avec ces filtres")
+        else:
+            print(f"  {'modele':<34} {'sante':<9} {'ok%':>5}  {'prix':<18} options")
+            for row in rows:
+                ok = "-" if row["success_rate"] is None else f"{row['success_rate']:.1f}"
+                print(
+                    f"  {row['name']:<34} {row['status']:<9} {ok:>5}  "
+                    f"{models.format_price(row):<18} {models.format_options(row)}"
+                )
+        current = _current_model(project, kind)
+        if not current:
+            continue
+        found = next((row for row in all_rows if models.matches(row, current)), None)
+        status = found["status"] if found else "inconnu"
+        print(f"  modele courant: {current} ({kind}) — {status}")
+        if found is not None and found["status"] == "down":
+            alternatives = [
+                row
+                for row in rows
+                if row["status"] != "down"
+                and row["name"] != found["name"]
+                and models.suitable(row, kind)
+            ][:3]
+            if alternatives:
+                detail = ", ".join(
+                    f"{row['name']} ({models.format_price(row)})"
+                    for row in alternatives
+                )
+                print(f"  alternatives disponibles: {detail}")
+    return 0
 
 
 def cmd_bible(args) -> int:
@@ -1022,6 +1105,22 @@ def build_parser() -> argparse.ArgumentParser:
     bible = sub.add_parser("bible", help="liste les entites et planches de la bible")
     bible.add_argument("--type", default=None, choices=["personnage", "lieu", "objet"])
     bible.set_defaults(func=cmd_bible)
+
+    models_cmd = sub.add_parser(
+        "models", help="liste les modeles Pollinations (sante, prix, options)"
+    )
+    models_cmd.add_argument(
+        "--kind", default="video", choices=["video", "image", "text", "all"]
+    )
+    models_cmd.add_argument(
+        "--available", action="store_true", help="masque les modeles down"
+    )
+    models_cmd.add_argument(
+        "--max-price", type=float, default=None, help="prix max dans l'unite affichee"
+    )
+    models_cmd.add_argument("--search", default=None, help="filtre nom/alias/titre")
+    models_cmd.add_argument("--json", action="store_true", help="sortie JSON")
+    models_cmd.set_defaults(func=cmd_models)
 
     status = sub.add_parser("status", help="etat du dernier run et palier suivant")
     status.set_defaults(func=cmd_status)

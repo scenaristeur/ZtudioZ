@@ -27,6 +27,7 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
 .venv/bin/python -m studio.cli --project <dossier> run <workflow> --input '<json>'
 .venv/bin/python -m studio.cli --project <dossier> answer <run_id> <gate> <continue|retry|stop> [--feedback "<texte>"] [--feedback-item "<gate>#<index>=<texte>"]
 .venv/bin/python -m studio.cli --project <dossier> journal [--run <run_id>]
+.venv/bin/python -m studio.cli --project <dossier> models --kind video --available
 .venv/bin/python -m studio.cli validate
 ```
 
@@ -37,6 +38,9 @@ t'arrêter à chaque gate. Le super-décideur est l'humain.
 - Si le run demande Agnes et qu'Agnes est injoignable/saturé, **demande à l'humain** s'il
   accepte le repli Pollinations (`flux` sans référence puis `gptimage`, `wan-fast` avec
   image), puis relance avec `--fallback pollinations`. Ne bascule jamais sans réponse.
+- Si un modèle par défaut est down, modifié ou trop cher, lance
+  `models --kind <video|image|text> --available` (avec `--project`) avant de proposer un
+  remplaçant : montre santé, prix et compatibilité, puis demande l'accord humain.
 - Montre toujours le `run_id`, le statut, la gate et les chemins d'artefacts.
 - Le studio v3 est autonome : ne lire, n'écrire ni s'appuyer sur aucun dossier extérieur
   au projet courant (`runs/<slug>`).
