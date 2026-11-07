@@ -9,7 +9,7 @@
 >
 > **Statut** : **M0 + M1 + M2 réalisés, M3 en cours** — noyau complet, artefacts binaires typés
 > et lignés, adaptateur image, `ToolAgent` + dispatch (python/cli), montage ffmpeg vérifié par
-> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 296 tests verts, démos CLI
+> ffprobe, échec d'item borné, sous-workflows, retry de gate, SIGINT, 297 tests verts, démos CLI
 > M0/M1/M2 fonctionnelles ; runs réels validés de bout en bout (Albert pour le texte,
 > Pollinations pour les images, RIA respecte les quotas annoncés). **M3.1 à M3.5 livrées, M4 entamé** : un projet
 > porte sa config (`studio.yaml`), ses providers et son contexte ; la CLI écrit dans le projet,
@@ -715,7 +715,7 @@ Vérifié en réel sur deux JPEG de `feu-follet-v2` : Albert `gemma-4-31b-it` d�
 avec `constraints: [{text: "pas de dialogue", respected: true, evidence: "aucune bulle..."}]`.
 Le contrôleur voit désormais les pixels et répond contrainte par contrainte.
 
-Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de modèles (M4) — **+37 tests, 296 verts** :
+Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de modèles (M4) — **+38 tests, 297 verts** :
 
 | Test | Tests | Garantie |
 |---|---|---|
@@ -738,6 +738,7 @@ Tests ajoutés pour le verdict plan par plan, le retry ciblé et le catalogue de
 | `test_models.py` (CLI) | 3 | `--available` masque les down et affiche prix/options ; `--json` scriptable ; `--project` signale le modèle courant down et des alternatives compatibles image+durée |
 | `test_models.py` (compatibilité) | 1 | un remplaçant vidéo doit accepter une image et la durée demandée (exclut audio-only et plans trop longs) |
 | `test_video.py` (modèle) | 2 | `video-maker` déclare un placeholder `mock/video` ; le modèle vidéo configuré par le projet (`seedance-1-pro-fast`) prime sur le placeholder de l'agent |
+| `test_video.py` (cohérence) | 1 | `video-maker` référence le pack `video-coherence` et son prompt exige trajectoire, absence de collision, sens du déplacement, marche avant (pas de recul) |
 
 L'UI applique la même règle : à `gate_verdict`, chaque plan fautif reçoit sa propre zone de
 correction et le bouton « Recommencer les plans fautifs » envoie `feedback_items` ; la zone
@@ -929,6 +930,7 @@ condition de :
 | 2026-11-07 | modèles | **Catalogue live des modèles.** `studio models` interroge `/v1/models`, `/image/models`, `/video/models` et affiche santé, `ok%`, prix (`pollen/s`, `pollen/image`, `pollen/Mtok`) et options (durée, refs, modalités, résolutions). Filtres `--available`, `--max-price`, `--search`, `--json`, et surtout `--need` (répétable) : `image-plain`, `image-ref`, `video-ref`, `video-audio`, `speech-to-text`, `text-to-speech`, `vision`, `multimodal`, `tool-calling`, etc. Avec `--project`, signale le modèle courant et, s'il est down, propose des alternatives **compatibles besoin + image + durée**. Prix lus selon la clé média réelle (`completionVideoSeconds`, `promptAudioSeconds`, `completionAudioTokens`...). Vérifié en réel : `wan-fast` down → `prunaai/p-video` (0,02 $/s), `seedance-1-pro-fast` (0,021 $/s), STT `whisper` / `mai-transcribe`. 13 tests, **294 verts** | assistant |
 | 2026-11-07 | M2 vidéo | **Agnes local saturée, puis choix Pollinations.** Agnes répond `503 video_queue_full` (retry 13/15, 720 s) : run arrêté proprement, coût 0. Le run Pollinations précédent avait aussi échoué (`503`, `422 fal.ai`, read timeout). Décision humaine : `bytedance/seedance-1-pro-fast` (~0,021 $/s, ~0,32 $ pour 3×5 s). Corrigé au passage : `video-maker` déclare `mock/video`, donc le modèle du projet prime sur l'ancien `wan-fast` codé dans l'agent. 2 tests, **296 verts** | assistant + humain |
 | 2026-11-07 | run réel | **3 clips M2 générés** avec `seedance-1-pro-fast` : h264 1248×704, 5,042 s chacun (4,9 / 6,1 / 3,8 Mo), **coût journalisé 0,3153**. Run `8ea7c5928a215648` `blocked` à `gate_videos`, décision humaine en attente (les vidéos ne sont pas jugées par l'assistant) | assistant + humain |
+| 2026-11-07 | cohérence vidéo | **Revue humaine des 3 clips** : trajectoire du véhicule 1 ambiguë (risque de collision), machine 2 dont les roues tournent sans avancer, personnage 3 qui recule. Ajout du pack `video-coherence` (trajectoire, collisions, roues/déplacement, marche avant, continuité) injecté dans `video-maker` v2, et d'une procédure de retry ciblé `gate_videos` dans le skill opérateur. 1 test, **297 verts** | assistant + humain |
 
 ---
 

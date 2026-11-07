@@ -321,6 +321,25 @@ Après `--answer gate_storyboard=continue`, la génération part. Compte ~4-5 mi
 `runs/<slug>/artifacts/<hash>.mp4`, l'humain regarde — **ne prétends jamais voir les vidéos**.
 Ensuite `gate_montage`, puis `probe`.
 
+**Cohérence physique** : le pack `video-coherence` est injecté dans `video-maker`. Avant
+de valider `gate_videos`, vérifier avec l'humain les évidences :
+- trajectoire et direction stables, aucune collision ni intersection impossible ;
+- roues qui tournent dans le sens du déplacement, machine qui avance/recule réellement ;
+- personnage qui s'éloigne en marchant vers l'avant, pas à reculons ;
+- pas de saut, téléportation ou glissement.
+
+Pour corriger un clip, `retry` ciblé sur `gate_videos` (un seul foreach en amont) :
+
+```bash
+python -m studio.cli --project runs/<slug> answer <run_id> gate_videos retry \
+  --feedback-item 'gate_videos#0=trajectoire stable, ne pas croiser les autres vehicules' \
+  --feedback-item 'gate_videos#1=la machine avance reellement, roues dans le sens du deplacement' \
+  --feedback-item 'gate_videos#2=le personnage marche vers l avant, sans reculer'
+```
+
+Les corrections sont injectées dans le prompt video et les clips visés seuls sont rejoués.
+Ne jamais répondre à la place de l'humain : il regarde les mp4 et tranche.
+
 - L'image de référence Pollinations doit être publique : `tools/video.py` la téléverse sur
   tmpfiles.org (URL 48 h). C'est un export vers un tiers, dis-le à l'humain (dette D30).
   Agnes local n'exporte pas les images.

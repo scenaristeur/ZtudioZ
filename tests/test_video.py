@@ -371,6 +371,20 @@ def test_video_maker_declare_un_placeholder_de_modele():
     assert str(agent["model"]).startswith("mock")
 
 
+def test_video_maker_porte_les_regles_de_coherence_physique():
+    registry = load_registry(STUDIO_ROOT)
+    agent = registry.agent("studio:agent/video-maker")
+    prompt = str(agent.get("prompt") or "").lower()
+
+    assert "video-coherence" in (agent.get("skills") or [])
+    for term in ("collision", "trajectoire", "sens du deplacement", "reculer"):
+        assert term in prompt
+
+    pack = registry.skill("video-coherence").lower()
+    for term in ("collision", "trajectoire", "roue", "reculer", "direction"):
+        assert term in pack
+
+
 def test_le_seed_reste_dans_les_bornes_de_l_api(monkeypatch):
     """Trouve en reel : un seed sur 64 bits est refuse (max 2147483647)."""
     from urllib.parse import parse_qs, urlparse

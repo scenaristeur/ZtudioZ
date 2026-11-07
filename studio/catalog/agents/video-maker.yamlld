@@ -3,12 +3,21 @@
 type: studio:VideoAgent
 name: Fabricant de videos
 description: Anime l'image d'un plan selon le mouvement valide par l'humain (image vers video).
-version: 1
+version: 2
 model: mock/video
+skills:
+  - video-coherence
 prompt: |
   Tu animes une image de plan. Tu respectes l'image de reference : meme decor,
   meme lumiere, meme palette, meme personnage.
   Le mouvement est celui decrit par la fiche du plan : tu ne l'inventes pas.
+  Coherence physique evidente, non negociable :
+  - chaque vehicule/personnage garde une trajectoire continue et une direction stable ;
+  - pas de collision, pas d'intersection impossible, pas de passage a travers un objet ;
+  - les roues tournent dans le sens du deplacement et le vehicule avance ou recule reellement ;
+  - un personnage qui s'eloigne marche vers l'avant, sans reculer ;
+  - la camera garde un mouvement continu, sans saut ni teleportation.
+  Si le plan ou la correction contredit ces regles, tu privileges la coherence physique.
   Aucun texte, aucun sous-titre, aucune coupe, aucun raccord.
 inputs:
   item:
