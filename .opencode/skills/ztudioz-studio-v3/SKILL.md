@@ -289,23 +289,41 @@ Deux workflows :
   Il a lui aussi une gate **avant** la fabrication des clips (`gate_clips`), puis la gate du
   montage (`gate_montage`). Sans réponse, aucun mp4 n'est produit.
 
+Après un M1 terminé, `next` et `run` fédèrent automatiquement `shots` + `image` en `plans` :
+
 ```bash
-python -m studio.cli --runs $RUNS run studio:workflow/m2-video \
-  --provider mock --video-provider pollinations \
-  --input '{"plans": [{"image": {"artifact": "<hash image M1>"}, "prompt": "<plan>", "motion": "<mouvement>", "duration": 5}]}'
+python -m studio.cli --project runs/<slug> next
+python -m studio.cli --project runs/<slug> run studio:workflow/m2-video
 ```
 
-Le workflow s'arrête d'abord à `gate_storyboard` : **aucun appel payant n'est parti**. Montre
+Pour imposer des fiches (mouvement/durée différents), passer `--input '{"plans": [...]}'`
+explicitement ; l'explicite écrase la fédération. Chaque fiche porte
+`image`, `prompt`, `motion`, `duration`.
+
+Avant de choisir le provider vidéo, interroger le besoin réel :
+
+```bash
+python -m studio.cli --project runs/<slug> models --kind video --need video-ref --available
+```
+
+`video-ref` = image→vidéo (le cas M2). Ajouter `--need video-audio` si le son est requis.
+Agnes local (`kind: agnes`, `base_url: http://localhost:8765`) est à coût 0 ; si son
+`/api/health` répond, c'est le choix par défaut pour éviter une dépense Pollinations.
+
+Le workflow s'arrête d'abord à `gate_storyboard` : **aucun appel vidéo n'est parti**. Montre
 les fiches (image, prompt, mouvement, durée) et attends l'accord. Le mouvement est une décision
 visuelle : propose-le, ne l'impose pas.
 
-Après `--answer gate_storyboard=continue`, la génération part. Compte ~4-5 min par clip.
-Puis `gate_videos` : donne les chemins `runs/<slug>/artifacts/<hash>.mp4`, l'humain regarde —
-**ne prétends jamais voir les vidéos**. Ensuite `gate_montage`, puis `probe`.
+Après `--answer gate_storyboard=continue`, la génération part. Compte ~4-5 min par clip
+(Pollinations) ou selon la file Agnes. Puis `gate_videos` : donne les chemins
+`runs/<slug>/artifacts/<hash>.mp4`, l'humain regarde — **ne prétends jamais voir les vidéos**.
+Ensuite `gate_montage`, puis `probe`.
 
-- L'image de référence doit être publique : `tools/video.py` la téléverse sur tmpfiles.org
-  (URL 48 h). C'est un export vers un tiers, dis-le à l'humain (dette D30).
-- `m2-video` ne devine pas les fiches : construis `plans` depuis `shots` + `image` de M1.
+- L'image de référence Pollinations doit être publique : `tools/video.py` la téléverse sur
+  tmpfiles.org (URL 48 h). C'est un export vers un tiers, dis-le à l'humain (dette D30).
+  Agnes local n'exporte pas les images.
+- `m2-video` ne devine pas les fiches : `prepare_inputs` les fédère depuis `shots` + `image`
+  de M1 ; ne les recopie pas à la main sauf override volontaire.
 - Un clip en panne n'arrête pas le montage des autres ; le journal écrit `item_failed`.
 - `outputs.probe = {duration, codec, streams}` — conformité mesurée, pas déclarée.
 
