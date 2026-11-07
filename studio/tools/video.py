@@ -191,11 +191,16 @@ class PollinationsVideoProvider:
             ).digest()[:8],
             "big",
         ) % 2_147_483_647
+        resolved_model = (
+            model
+            if model and not str(model).startswith("mock")
+            else self.model
+        )
         params = {
             "width": self.width,
             "height": self.height,
             "duration": duration,
-            "model": model or self.model,
+            "model": resolved_model,
             "seed": seed,
         }
         if api_key:

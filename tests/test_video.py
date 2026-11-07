@@ -324,6 +324,53 @@ def test_l_upload_public_envoie_un_user_agent(monkeypatch):
         assert request.get_header("User-agent") == video_module.USER_AGENT
 
 
+def test_le_modele_du_projet_prime_sur_le_placeholder_de_lagent(monkeypatch):
+    """Le modele video vient du projet ; l'agent ne doit pas figer wan-fast."""
+    from urllib.parse import parse_qs, urlparse
+
+    from studio.tools import video as video_module
+
+    captured = {}
+
+    class Response:
+        headers = {"content-type": "video/mp4"}
+
+        def read(self) -> bytes:
+            return b"\x00\x00\x00\x20ftypisom" + b"0" * 32
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        return Response()
+
+    monkeypatch.setattr(video_module.urllib.request, "urlopen", fake_urlopen)
+    provider = video_module.PollinationsVideoProvider(model="seedance-1-pro-fast")
+
+    asyncio.run(
+        provider.generate(
+            agent_id="studio:agent/video-maker",
+            model="mock/video",
+            system="",
+            prompt="plan",
+            duration=DURATION,
+        )
+    )
+
+    query = parse_qs(urlparse(captured["url"]).query)
+    assert query["model"] == ["seedance-1-pro-fast"]
+
+
+def test_video_maker_declare_un_placeholder_de_modele():
+    agent = load_registry(STUDIO_ROOT).agent("studio:agent/video-maker")
+
+    assert str(agent["model"]).startswith("mock")
+
+
 def test_le_seed_reste_dans_les_bornes_de_l_api(monkeypatch):
     """Trouve en reel : un seed sur 64 bits est refuse (max 2147483647)."""
     from urllib.parse import parse_qs, urlparse

@@ -175,8 +175,10 @@ export STUDIO_IMAGE_WIDTH=256 STUDIO_IMAGE_HEIGHT=256
   Si le safety Azure de `gptimage` rejette une scène (`safety_violations=[violence]`),
   basculer le projet sur `ref_model: kontext` (FLUX Kontext, gratuit, image→image) :
   même ancrage, pas de filtre Azure. Ne jamais retirer `strict_refs` pour contourner.
-- Vidéos : `--video-provider pollinations` (`wan-fast` défaut, ~0,01 $/s ; `grok-video-pro`
-  ~0,05 $/s via `STUDIO_VIDEO_MODEL`). Facturé à la seconde, budget refusé avant l'appel.
+- Vidéos : `--video-provider pollinations` (modèle choisi par `studio.yaml` ; `wan-fast`
+  ~0,01 $/s, `seedance-1-pro-fast` ~0,021 $/s, `flux-3-max` ~0,0425 $/s avec audio).
+  `video-maker` déclare `mock/video` : le modèle du projet prime. Facturé à la seconde,
+  budget refusé avant l'appel. Vérifier le modèle avec `models --kind video --need video-ref`.
 - Agnes local (`http://localhost:8765`) : `--image-provider agnes` et
   `--video-provider agnes`, ou `kind: agnes` dans `studio.yaml`. L'image accepte
   `reference_image` (image→image) et compose plusieurs références via apihub

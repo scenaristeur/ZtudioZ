@@ -4,7 +4,7 @@ type: studio:VideoAgent
 name: Fabricant de videos
 description: Anime l'image d'un plan selon le mouvement valide par l'humain (image vers video).
 version: 1
-model: wan-fast
+model: mock/video
 prompt: |
   Tu animes une image de plan. Tu respectes l'image de reference : meme decor,
   meme lumiere, meme palette, meme personnage.
