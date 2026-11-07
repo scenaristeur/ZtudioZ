@@ -343,6 +343,19 @@ python -m studio.cli --project runs/<slug> answer <run_id> gate_videos retry \
 Les corrections sont injectées dans le prompt video et les clips visés seuls sont rejoués.
 Ne jamais répondre à la place de l'humain : il regarde les mp4 et tranche.
 
+**Repartir d'un clip existant sans changer la scène** : le provider est image→vidéo.
+Extraire la première image du clip préféré, la stocker comme artefact, remplacer `image`
+dans la fiche et mettre la correction dans `motion`. La génération repart de cette image,
+donc la scène et le cadrage sont préservés ; seule la durée est rejouée.
+
+```bash
+ffmpeg -y -i runs/<slug>/artifacts/<clip>.mp4 -frames:v 1 /tmp/plan.png
+# stocker /tmp/plan.png comme artefact, puis relancer avec --input plans
+```
+
+Ne pas régénérer toute la scène pour un détail de mouvement : utiliser la première image
+du clip validé, ou `studio restore` pour revenir à une version antérieure.
+
 - L'image de référence Pollinations doit être publique : `tools/video.py` la téléverse sur
   tmpfiles.org (URL 48 h). C'est un export vers un tiers, dis-le à l'humain (dette D30).
   Agnes local n'exporte pas les images.
